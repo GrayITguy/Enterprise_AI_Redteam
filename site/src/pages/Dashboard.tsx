@@ -61,6 +61,12 @@ export default function Dashboard() {
     refetchInterval: 15_000,
   });
 
+  const { data: stats } = useQuery({
+    queryKey: ["scan-stats"],
+    queryFn: () => api.get("/scans/stats").then((r) => r.data as any),
+    refetchInterval: 30_000,
+  });
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -74,10 +80,10 @@ export default function Dashboard() {
   const totalFailed = completedScans.reduce((sum: number, s: any) => sum + s.failedTests, 0);
 
   const severityData = [
-    { name: "Critical", count: completedScans.reduce((s: number, sc: any) => s + (sc.criticalCount ?? 0), 0), fill: SEVERITY_COLORS.Critical },
-    { name: "High", count: completedScans.reduce((s: number, sc: any) => s + (sc.highCount ?? 0), 0), fill: SEVERITY_COLORS.High },
-    { name: "Medium", count: completedScans.reduce((s: number, sc: any) => s + (sc.mediumCount ?? 0), 0), fill: SEVERITY_COLORS.Medium },
-    { name: "Low", count: completedScans.reduce((s: number, sc: any) => s + (sc.lowCount ?? 0), 0), fill: SEVERITY_COLORS.Low },
+    { name: "Critical", count: stats?.critical ?? 0, fill: SEVERITY_COLORS.Critical },
+    { name: "High",     count: stats?.high     ?? 0, fill: SEVERITY_COLORS.High },
+    { name: "Medium",   count: stats?.medium   ?? 0, fill: SEVERITY_COLORS.Medium },
+    { name: "Low",      count: stats?.low      ?? 0, fill: SEVERITY_COLORS.Low },
   ];
 
   const passRate = completedScans.length > 0

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { db } from "../../db/index.js";
 import { scans, projects, scanResults } from "../../db/schema.js";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
@@ -21,6 +21,33 @@ const CreateScanSchema = z.object({
 // ─── GET /api/scans/catalog ───────────────────────────────────────────────────
 scansRouter.get("/catalog", (_req, res) => {
   return res.json({ plugins: PLUGINS, presets: PRESETS });
+});
+
+// ─── GET /api/scans/stats ─────────────────────────────────────────────────────
+scansRouter.get("/stats", async (req: AuthenticatedRequest, res) => {
+  // Aggregate failed findings by severity across all completed scans for this user
+  const rows = await db
+    .select({
+      severity: scanResults.severity,
+      count: sql<number>`count(*)`.as("count"),
+    })
+    .from(scanResults)
+    .innerJoin(scans, eq(scanResults.scanId, scans.id))
+    .where(
+      and(
+        eq(scans.userId, req.user!.id),
+        eq(scans.status, "completed"),
+        sql`${scanResults.passed} = 0`
+      )
+    )
+    .groupBy(scanResults.severity)
+    .all();
+
+  const stats: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  for (const row of rows) {
+    stats[row.severity] = Number(row.count);
+  }
+  return res.json(stats);
 });
 
 // ─── GET /api/scans ───────────────────────────────────────────────────────────
