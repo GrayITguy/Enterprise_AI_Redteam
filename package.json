@@ -1,0 +1,50 @@
+{
+  "name": "enterpriseairedteam",
+  "version": "1.0.0",
+  "description": "Enterprise AI Red Team Platform - unified self-hosted security testing dashboard",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server/app.ts",
+    "dev:worker": "tsx watch src/server/workers/scanWorker.ts",
+    "build": "tsc -p tsconfig.json",
+    "build:all": "npm run build && cd site && npm run build",
+    "start": "node dist/server/app.js",
+    "worker": "node dist/server/workers/scanWorker.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "license:keygen": "tsx scripts/keygen.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.4.2",
+    "cors": "^2.8.5",
+    "drizzle-orm": "^0.30.10",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.13",
+    "pdfkit": "^0.14.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.13.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^6.4.15",
+    "@types/pdfkit": "^0.13.4",
+    "@types/uuid": "^9.0.8",
+    "drizzle-kit": "^0.21.4",
+    "tsx": "^4.16.0",
+    "typescript": "^5.4.5"
+  }
+}

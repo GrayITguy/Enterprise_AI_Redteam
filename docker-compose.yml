@@ -1,0 +1,159 @@
+version: "3.9"
+
+services:
+  # ─────────────────────────────────────────
+  # Main application server (Express + React SPA)
+  # ─────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: enterpriseairedteam:latest
+    container_name: eart-app
+    ports:
+      - "15500:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: /data/eart.db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-64-char-random-string}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      REPORT_DIR: /data/reports
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RSA_PUBLIC_KEY_PATH: /app/keys/license_public.pem
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@enterpriseairedteam.com}
+    volumes:
+      - app-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./keys:/app/keys:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ─────────────────────────────────────────
+  # BullMQ scan worker (long-running jobs)
+  # ─────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: enterpriseairedteam:latest
+    container_name: eart-worker
+    command: ["node", "dist/server/workers/scanWorker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: /data/eart.db
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REPORT_DIR: /data/reports
+    volumes:
+      - app-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # Redis (BullMQ queue + optional caching)
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: eart-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Python Worker: Garak
+  # Usage: docker compose --profile workers build
+  # Then Node.js calls: docker run --rm -i eart-garak:latest
+  # ─────────────────────────────────────────
+  garak-worker:
+    build:
+      context: ./python-workers/garak
+      dockerfile: Dockerfile
+    image: eart-garak:latest
+    container_name: eart-garak-build
+    profiles:
+      - workers
+    command: ["echo", "garak worker image built successfully"]
+
+  # ─────────────────────────────────────────
+  # Python Worker: PyRIT
+  # ─────────────────────────────────────────
+  pyrit-worker:
+    build:
+      context: ./python-workers/pyrit
+      dockerfile: Dockerfile
+    image: eart-pyrit:latest
+    container_name: eart-pyrit-build
+    profiles:
+      - workers
+    command: ["echo", "pyrit worker image built successfully"]
+
+  # ─────────────────────────────────────────
+  # Python Worker: DeepTeam
+  # ─────────────────────────────────────────
+  deepteam-worker:
+    build:
+      context: ./python-workers/deepteam
+      dockerfile: Dockerfile
+    image: eart-deepteam:latest
+    container_name: eart-deepteam-build
+    profiles:
+      - workers
+    command: ["echo", "deepteam worker image built successfully"]
+
+  # ─────────────────────────────────────────
+  # Optional: Local Ollama sidecar
+  # Usage: docker compose --profile local-ai up -d
+  # ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: eart-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - local-ai
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  app-data:
+    driver: local
+  redis-data:
+    driver: local
+  ollama-data:
+    driver: local
