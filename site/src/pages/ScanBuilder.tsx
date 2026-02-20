@@ -10,7 +10,19 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, Zap, Target, ChevronRight, AlertTriangle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar } from "lucide-react";
+
+/** Convert a datetime-local string (YYYY-MM-DDTHH:MM) to ISO-8601. */
+function localToIso(local: string): string {
+  return new Date(local).toISOString();
+}
+
+/** Current time + n minutes formatted for datetime-local input. */
+function defaultScheduleTime(offsetMinutes = 60): string {
+  const d = new Date(Date.now() + offsetMinutes * 60_000);
+  return d.toISOString().slice(0, 16);
+}
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "border-red-500/40 text-red-400 bg-red-500/10",
@@ -28,6 +40,10 @@ export default function ScanBuilder() {
   const [selectedPreset, setSelectedPreset] = useState<string>("quick");
   const [selectedPlugins, setSelectedPlugins] = useState<Set<string>>(new Set());
   const [usePreset, setUsePreset] = useState(true);
+
+  // Scheduler state
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState<string>(defaultScheduleTime());
 
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
@@ -67,15 +83,21 @@ export default function ScanBuilder() {
 
   const createScanMutation = useMutation({
     mutationFn: async () => {
-      const pluginIds = usePreset && selectedPreset
-        ? (presets[selectedPreset]?.plugins as string[] ?? [])
-        : Array.from(selectedPlugins);
+      const pluginIds =
+        usePreset && selectedPreset
+          ? (presets[selectedPreset]?.plugins as string[] ?? [])
+          : Array.from(selectedPlugins);
 
-      const res = await api.post("/scans", {
+      const body: Record<string, unknown> = {
         projectId: selectedProjectId,
         plugins: usePreset ? undefined : pluginIds,
         preset: usePreset ? selectedPreset : undefined,
-      });
+      };
+      if (scheduleEnabled && scheduledAt) {
+        body.scheduledAt = localToIso(scheduledAt);
+      }
+
+      const res = await api.post("/scans", body);
       return res.data as any;
     },
     onSuccess: (scan) => {
@@ -94,6 +116,8 @@ export default function ScanBuilder() {
   }, {});
 
   const canSubmit = selectedProjectId && activePlugins.size > 0;
+  const scheduledInPast =
+    scheduleEnabled && scheduledAt && new Date(scheduledAt) <= new Date();
   const error = (createScanMutation.error as any)?.response?.data?.error;
 
   return (
@@ -234,20 +258,85 @@ export default function ScanBuilder() {
         </CardContent>
       </Card>
 
+      {/* Step 3: Schedule */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Calendar className="h-4 w-4" />
+            3. Schedule (optional)
+          </CardTitle>
+          <CardDescription>Run immediately or set a future date and time</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Switch
+              id="schedule-toggle"
+              checked={scheduleEnabled}
+              onCheckedChange={setScheduleEnabled}
+            />
+            <Label htmlFor="schedule-toggle" className="cursor-pointer">
+              Schedule for a specific time
+            </Label>
+          </div>
+
+          {scheduleEnabled && (
+            <div className="space-y-2">
+              <Label htmlFor="scheduled-at" className="text-sm">
+                Date &amp; time (your local timezone)
+              </Label>
+              <Input
+                id="scheduled-at"
+                type="datetime-local"
+                className="max-w-xs"
+                value={scheduledAt}
+                min={defaultScheduleTime(1)}
+                onChange={(e) => setScheduledAt(e.target.value)}
+              />
+              {scheduledInPast ? (
+                <p className="text-sm text-destructive">
+                  Scheduled time must be in the future. The scheduler checks every 5 minutes.
+                </p>
+              ) : (
+                scheduledAt && (
+                  <p className="text-sm text-muted-foreground">
+                    Will run at{" "}
+                    <span className="font-medium text-foreground">
+                      {new Date(scheduledAt).toLocaleString()}
+                    </span>
+                  </p>
+                )
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Launch */}
       <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-4">
         <div>
-          <p className="font-medium">Ready to scan</p>
+          <p className="font-medium">
+            {scheduleEnabled ? "Schedule scan" : "Ready to scan"}
+          </p>
           <p className="text-sm text-muted-foreground">
-            {activePlugins.size} plugins · {selectedProjectId ? projects.find((p: any) => p.id === selectedProjectId)?.name ?? "" : "no project selected"}
+            {activePlugins.size} plugin{activePlugins.size !== 1 ? "s" : ""} ·{" "}
+            {selectedProjectId
+              ? projects.find((p: any) => p.id === selectedProjectId)?.name ?? ""
+              : "no project selected"}
+            {scheduleEnabled && scheduledAt && !scheduledInPast && (
+              <> · scheduled {new Date(scheduledAt).toLocaleString()}</>
+            )}
           </p>
         </div>
         <Button
           size="lg"
-          disabled={!canSubmit || createScanMutation.isPending}
+          disabled={!canSubmit || !!scheduledInPast || createScanMutation.isPending}
           onClick={() => createScanMutation.mutate()}
         >
-          {createScanMutation.isPending ? "Queuing..." : (
+          {createScanMutation.isPending ? (
+            "Queuing..."
+          ) : scheduleEnabled ? (
+            <>Schedule Scan <Calendar className="ml-2 h-4 w-4" /></>
+          ) : (
             <>Launch Scan <ChevronRight className="ml-2 h-4 w-4" /></>
           )}
         </Button>

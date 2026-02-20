@@ -12,6 +12,7 @@ import { licenseRouter } from "./routes/license.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
 import { logger } from "./utils/logger.js";
+import { startScheduler } from "./services/scheduler.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -82,6 +83,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 async function bootstrap(): Promise<void> {
   try {
     await runMigrations();
+    startScheduler();
     app.listen(PORT, "0.0.0.0", () => {
       logger.info(`Enterprise AI Red Team Platform listening on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV ?? "development"}`);
