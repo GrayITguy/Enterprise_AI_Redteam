@@ -55,7 +55,9 @@ worker.on("completed", async (job) => {
     if (!row) return;
 
     // ── Email notification (respects notifyOn preference) ─────────────────────
+    // null means the scan predates the notifyOn field → preserve old "always" behaviour
     const shouldEmail =
+      row.notifyOn === null ||
       row.notifyOn === "always" ||
       (row.notifyOn === "failure" && row.failedTests > 0);
 
