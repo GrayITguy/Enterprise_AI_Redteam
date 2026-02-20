@@ -16,8 +16,8 @@
     "license:keygen": "tsx scripts/keygen.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.4.3",
     "bullmq": "^5.4.2",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.30.10",
@@ -28,6 +28,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.13",
     "pdfkit": "^0.14.0",
+    "promptfoo": "^0.120.25",
     "uuid": "^9.0.1",
     "winston": "^3.13.0",
     "zod": "^3.23.8"
