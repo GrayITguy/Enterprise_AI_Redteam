@@ -9,7 +9,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
 } from "recharts";
-import { Download, Filter, ChevronDown, ChevronRight, Shield } from "lucide-react";
+import { Download, Filter, ChevronDown, ChevronRight, Shield, Sparkles, AlertCircle } from "lucide-react";
 import { useState } from "react";
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -94,6 +94,8 @@ export default function Results() {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [showFailedOnly, setShowFailedOnly] = useState(true);
 
+  const [narrative, setNarrative] = useState<string | null>(null);
+
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as any),
@@ -112,6 +114,12 @@ export default function Results() {
       const { reportId } = res.data;
       window.open(`/api/reports/${scanId}/download/${reportId}`, "_blank");
     },
+  });
+
+  const narrativeMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/results/scans/${scanId}/narrative`).then((r) => r.data as { narrative: string }),
+    onSuccess: (data) => setNarrative(data.narrative),
   });
 
   if (isLoading) {
@@ -187,6 +195,65 @@ export default function Results() {
           </Card>
         ))}
       </div>
+
+      {/* AI Summary Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Executive Summary
+            </CardTitle>
+            {!narrative && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => narrativeMutation.mutate()}
+                disabled={narrativeMutation.isPending || scan?.status !== "completed"}
+              >
+                {narrativeMutation.isPending ? (
+                  <>
+                    <div className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-3 w-3" />
+                    Generate
+                  </>
+                )}
+              </Button>
+            )}
+            {narrative && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setNarrative(null); narrativeMutation.reset(); }}
+              >
+                Regenerate
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {narrative ? (
+            <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{narrative}</p>
+          ) : narrativeMutation.isError ? (
+            <div className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                {(narrativeMutation.error as any)?.response?.data?.error ?? "Failed to generate summary"}
+              </span>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {scan?.status !== "completed"
+                ? "Available once the scan completes."
+                : "Click \u201cGenerate\u201d to produce an LLM-powered executive narrative from these results."}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="findings">
         <TabsList>

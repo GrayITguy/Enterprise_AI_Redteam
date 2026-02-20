@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar } from "lucide-react";
+import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar, Bell, Repeat } from "lucide-react";
 
 /** Convert a datetime-local string (YYYY-MM-DDTHH:MM) to ISO-8601. */
 function localToIso(local: string): string {
@@ -44,6 +44,8 @@ export default function ScanBuilder() {
   // Scheduler state
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduledAt, setScheduledAt] = useState<string>(defaultScheduleTime());
+  const [recurrence, setRecurrence] = useState<"once" | "daily" | "weekly" | "monthly">("once");
+  const [notifyOn, setNotifyOn] = useState<"always" | "failure" | "never">("always");
 
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
@@ -92,9 +94,11 @@ export default function ScanBuilder() {
         projectId: selectedProjectId,
         plugins: usePreset ? undefined : pluginIds,
         preset: usePreset ? selectedPreset : undefined,
+        notifyOn: notifyOn === "never" ? null : notifyOn,
       };
       if (scheduleEnabled && scheduledAt) {
         body.scheduledAt = localToIso(scheduledAt);
+        if (recurrence !== "once") body.recurrence = recurrence;
       }
 
       const res = await api.post("/scans", body);
@@ -263,51 +267,106 @@ export default function ScanBuilder() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Calendar className="h-4 w-4" />
-            3. Schedule (optional)
+            3. Schedule &amp; Notifications (optional)
           </CardTitle>
-          <CardDescription>Run immediately or set a future date and time</CardDescription>
+          <CardDescription>Run immediately or set a future date, recurrence, and alert preferences</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Switch
-              id="schedule-toggle"
-              checked={scheduleEnabled}
-              onCheckedChange={setScheduleEnabled}
-            />
-            <Label htmlFor="schedule-toggle" className="cursor-pointer">
-              Schedule for a specific time
-            </Label>
+        <CardContent className="space-y-5">
+          {/* Schedule toggle + datetime */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch
+                id="schedule-toggle"
+                checked={scheduleEnabled}
+                onCheckedChange={setScheduleEnabled}
+              />
+              <Label htmlFor="schedule-toggle" className="cursor-pointer">
+                Schedule for a specific time
+              </Label>
+            </div>
+
+            {scheduleEnabled && (
+              <div className="space-y-2 pl-1">
+                <Label htmlFor="scheduled-at" className="text-sm">
+                  Start date &amp; time (your local timezone)
+                </Label>
+                <Input
+                  id="scheduled-at"
+                  type="datetime-local"
+                  className="max-w-xs"
+                  value={scheduledAt}
+                  min={defaultScheduleTime(1)}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                />
+                {scheduledInPast ? (
+                  <p className="text-sm text-destructive">
+                    Scheduled time must be in the future. The scheduler checks every 5 minutes.
+                  </p>
+                ) : (
+                  scheduledAt && (
+                    <p className="text-sm text-muted-foreground">
+                      Will run at{" "}
+                      <span className="font-medium text-foreground">
+                        {new Date(scheduledAt).toLocaleString()}
+                      </span>
+                    </p>
+                  )
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Recurrence picker — only shown when scheduling is enabled */}
           {scheduleEnabled && (
             <div className="space-y-2">
-              <Label htmlFor="scheduled-at" className="text-sm">
-                Date &amp; time (your local timezone)
+              <Label className="flex items-center gap-1.5 text-sm">
+                <Repeat className="h-3.5 w-3.5" />
+                Recurrence
               </Label>
-              <Input
-                id="scheduled-at"
-                type="datetime-local"
-                className="max-w-xs"
-                value={scheduledAt}
-                min={defaultScheduleTime(1)}
-                onChange={(e) => setScheduledAt(e.target.value)}
-              />
-              {scheduledInPast ? (
-                <p className="text-sm text-destructive">
-                  Scheduled time must be in the future. The scheduler checks every 5 minutes.
+              <div className="flex flex-wrap gap-2">
+                {(["once", "daily", "weekly", "monthly"] as const).map((r) => (
+                  <Button
+                    key={r}
+                    size="sm"
+                    variant={recurrence === r ? "default" : "outline"}
+                    onClick={() => setRecurrence(r)}
+                    className="capitalize"
+                  >
+                    {r === "once" ? "Run once" : r}
+                  </Button>
+                ))}
+              </div>
+              {recurrence !== "once" && (
+                <p className="text-xs text-muted-foreground">
+                  After each run completes, the next scan will be automatically scheduled {recurrence === "daily" ? "24 hours" : recurrence === "weekly" ? "7 days" : "30 days"} later.
                 </p>
-              ) : (
-                scheduledAt && (
-                  <p className="text-sm text-muted-foreground">
-                    Will run at{" "}
-                    <span className="font-medium text-foreground">
-                      {new Date(scheduledAt).toLocaleString()}
-                    </span>
-                  </p>
-                )
               )}
             </div>
           )}
+
+          {/* Notification settings — always visible */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5 text-sm">
+              <Bell className="h-3.5 w-3.5" />
+              Email notifications
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { value: "always", label: "Always" },
+                { value: "failure", label: "Failures only" },
+                { value: "never", label: "Never" },
+              ] as const).map((opt) => (
+                <Button
+                  key={opt.value}
+                  size="sm"
+                  variant={notifyOn === opt.value ? "default" : "outline"}
+                  onClick={() => setNotifyOn(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -324,6 +383,9 @@ export default function ScanBuilder() {
               : "no project selected"}
             {scheduleEnabled && scheduledAt && !scheduledInPast && (
               <> · scheduled {new Date(scheduledAt).toLocaleString()}</>
+            )}
+            {scheduleEnabled && recurrence !== "once" && (
+              <> · repeats {recurrence}</>
             )}
           </p>
         </div>

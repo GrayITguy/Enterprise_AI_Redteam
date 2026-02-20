@@ -77,6 +77,10 @@ export const scans = sqliteTable("scans", {
   failedTests: integer("failed_tests").default(0).notNull(),
   errorMessage: text("error_message"),
   scheduledAt: integer("scheduled_at", { mode: "timestamp" }),
+  /** null = run-once; "daily" | "weekly" | "monthly" = recurring */
+  recurrence: text("recurrence"),
+  /** "always" = every completion; "failure" = only when failedTests > 0; null = no email */
+  notifyOn: text("notify_on"),
   startedAt: integer("started_at", { mode: "timestamp" }),
   completedAt: integer("completed_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
