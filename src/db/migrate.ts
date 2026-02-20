@@ -73,6 +73,8 @@ function applySchemaDirectly(): void {
       failed_tests INTEGER NOT NULL DEFAULT 0,
       error_message TEXT,
       scheduled_at INTEGER,
+      recurrence TEXT,
+      notify_on TEXT,
       started_at INTEGER,
       completed_at INTEGER,
       created_at INTEGER NOT NULL
@@ -121,6 +123,15 @@ function applySchemaDirectly(): void {
     CREATE INDEX IF NOT EXISTS idx_scan_results_severity ON scan_results(severity);
     CREATE INDEX IF NOT EXISTS idx_reports_scan_id ON reports(scan_id);
   `);
+  // Add new columns to existing tables (safe to run multiple times — errors are ignored)
+  const alterScans = [
+    "ALTER TABLE scans ADD COLUMN recurrence TEXT",
+    "ALTER TABLE scans ADD COLUMN notify_on TEXT",
+  ];
+  for (const stmt of alterScans) {
+    try { sqlite.exec(stmt); } catch { /* column already exists */ }
+  }
+
   console.log("[DB] Schema applied directly (development mode)");
 }
 

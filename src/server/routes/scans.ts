@@ -16,6 +16,8 @@ const CreateScanSchema = z.object({
   preset: z.enum(["quick", "owasp", "full"]).optional(),
   plugins: z.array(z.string()).optional(),
   scheduledAt: z.string().datetime().optional(),
+  recurrence: z.enum(["daily", "weekly", "monthly"]).nullable().optional(),
+  notifyOn: z.enum(["always", "failure"]).nullable().optional(),
 });
 
 // ─── GET /api/scans/catalog ───────────────────────────────────────────────────
@@ -90,7 +92,7 @@ scansRouter.post("/", async (req: AuthenticatedRequest, res) => {
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   }
 
-  const { projectId, preset, plugins: customPlugins, scheduledAt } = parsed.data;
+  const { projectId, preset, plugins: customPlugins, scheduledAt, recurrence, notifyOn } = parsed.data;
 
   // Verify project belongs to user
   const project = await db
@@ -132,6 +134,8 @@ scansRouter.post("/", async (req: AuthenticatedRequest, res) => {
     failedTests: 0,
     errorMessage: null,
     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+    recurrence: recurrence ?? null,
+    notifyOn: notifyOn ?? null,
     startedAt: null,
     completedAt: null,
     createdAt: now,
