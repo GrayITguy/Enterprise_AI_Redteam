@@ -1,5 +1,9 @@
+import { useEffect } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
+import { useNotificationStore } from "@/store/notificationStore";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -28,6 +32,28 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, clearAuth } = useAuthStore();
+  const { lastSeenAt, markSeen } = useNotificationStore();
+
+  // Poll scans to compute the notification badge count
+  const { data: scans } = useQuery({
+    queryKey: ["scans"],
+    queryFn: () => api.get("/scans").then((r) => r.data as any[]),
+    refetchInterval: 15_000,
+  });
+
+  // Count completed scans whose completedAt is after lastSeenAt
+  const newCompletedCount = (scans ?? []).filter((s: any) => {
+    if (s.status !== "completed" || !s.completedAt) return false;
+    const completedMs = new Date(s.completedAt).getTime();
+    return completedMs > lastSeenAt;
+  }).length;
+
+  // Mark seen when user lands on dashboard
+  useEffect(() => {
+    if (location.pathname === "/dashboard") {
+      markSeen();
+    }
+  }, [location.pathname, markSeen]);
 
   const handleLogout = () => {
     clearAuth();
@@ -66,6 +92,7 @@ export function Layout() {
               href === "/dashboard"
                 ? location.pathname === "/dashboard"
                 : location.pathname.startsWith(href);
+            const showBadge = href === "/dashboard" && newCompletedCount > 0 && !isActive;
             return (
               <Link
                 key={href}
@@ -78,7 +105,12 @@ export function Layout() {
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                {label}
+                <span className="flex-1">{label}</span>
+                {showBadge && (
+                  <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                    {newCompletedCount > 9 ? "9+" : newCompletedCount}
+                  </span>
+                )}
               </Link>
             );
           })}

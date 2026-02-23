@@ -3,13 +3,14 @@ import { api } from "@/lib/api";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
+  LineChart, Line,
 } from "recharts";
-import { Shield, AlertTriangle, CheckCircle, Clock, FolderOpen, ChevronRight } from "lucide-react";
+import { Shield, AlertTriangle, Clock, FolderOpen, ChevronRight, CalendarClock, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 
 const SEVERITY_COLORS = {
   Critical: "#dc2626",
@@ -67,6 +68,18 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   });
 
+  const { data: history } = useQuery({
+    queryKey: ["scan-history"],
+    queryFn: () => api.get("/scans/history").then((r) => r.data as any[]),
+    refetchInterval: 60_000,
+  });
+
+  const { data: upcoming } = useQuery({
+    queryKey: ["scans-upcoming"],
+    queryFn: () => api.get("/scans/upcoming").then((r) => r.data as any[]),
+    refetchInterval: 60_000,
+  });
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -92,6 +105,15 @@ export default function Dashboard() {
         / completedScans.length * 100
       )
     : 0;
+
+  const trendData = (history ?? []).map((s: any, i: number) => ({
+    label: s.completedAt
+      ? format(new Date(s.completedAt), "MM/dd")
+      : `#${i + 1}`,
+    passed: s.passedTests ?? 0,
+    failed: s.failedTests ?? 0,
+    passRate: s.totalTests > 0 ? Math.round((s.passedTests / s.totalTests) * 100) : 0,
+  }));
 
   return (
     <div className="space-y-6 p-6">
@@ -201,6 +223,94 @@ export default function Dashboard() {
                 />
               </PieChart>
             </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Trend + Upcoming */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Scan history trend */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Pass-Rate Trend (last 30 scans)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trendData.length === 0 ? (
+              <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
+                No completed scans yet
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    unit="%"
+                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "6px",
+                      color: "hsl(var(--foreground))",
+                    }}
+                    formatter={(v: any) => [`${v}%`, "Pass Rate"]}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="passRate"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: "#22c55e" }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Upcoming scheduled scans */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Upcoming Scans</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(upcoming ?? []).length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
+                <CalendarClock className="h-8 w-8 opacity-40" />
+                <p>No scheduled scans</p>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/scans/new">Schedule one</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(upcoming ?? []).map((s: any) => (
+                  <div key={s.id} className="flex items-start justify-between rounded-md border p-2.5 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{s.projectName ?? s.projectId?.slice(0, 8)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {s.scheduledAt ? format(new Date(s.scheduledAt), "MMM d, HH:mm") : "—"}
+                      </p>
+                    </div>
+                    {s.recurrence && (
+                      <Badge variant="secondary" className="capitalize text-[10px] shrink-0 ml-2">
+                        {s.recurrence}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
