@@ -2,20 +2,31 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { db, sqlite } from "./index.js";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function runMigrations(): Promise<void> {
   const migrationsFolder = path.join(__dirname, "migrations");
+  const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
+  const hasMigrations = fs.existsSync(journalPath);
+
+  if (!hasMigrations) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[DB] No migrations found — applying schema directly (development mode)...");
+      applySchemaDirectly();
+      return;
+    }
+    throw new Error(`No migration files found at ${migrationsFolder}. Run 'drizzle-kit generate' to create them.`);
+  }
 
   try {
     migrate(db, { migrationsFolder });
     console.log("[DB] Migrations applied successfully");
   } catch (err) {
     console.error("[DB] Migration failed:", err);
-    // In dev, fall back to push mode
     if (process.env.NODE_ENV !== "production") {
-      console.log("[DB] Attempting schema push in development mode...");
+      console.log("[DB] Falling back to direct schema apply (development mode)...");
       applySchemaDirectly();
     } else {
       throw err;
