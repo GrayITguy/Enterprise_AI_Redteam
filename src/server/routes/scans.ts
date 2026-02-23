@@ -3,7 +3,7 @@ import { z } from "zod";
 import { v4 as uuid } from "uuid";
 import { db } from "../../db/index.js";
 import { scans, projects, scanResults } from "../../db/schema.js";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
@@ -50,6 +50,60 @@ scansRouter.get("/stats", async (req: AuthenticatedRequest, res) => {
     stats[row.severity] = Number(row.count);
   }
   return res.json(stats);
+});
+
+// ─── GET /api/scans/history ───────────────────────────────────────────────────
+// Returns last 30 completed scans for trend charting (oldest first).
+scansRouter.get("/history", async (req: AuthenticatedRequest, res) => {
+  const rows = await db
+    .select({
+      id: scans.id,
+      projectName: projects.name,
+      completedAt: scans.completedAt,
+      totalTests: scans.totalTests,
+      passedTests: scans.passedTests,
+      failedTests: scans.failedTests,
+    })
+    .from(scans)
+    .leftJoin(projects, eq(scans.projectId, projects.id))
+    .where(and(eq(scans.userId, req.user!.id), eq(scans.status, "completed")))
+    .orderBy(desc(scans.completedAt))
+    .limit(30)
+    .all();
+
+  // Return oldest-first so charts render left-to-right
+  return res.json(rows.reverse());
+});
+
+// ─── GET /api/scans/upcoming ──────────────────────────────────────────────────
+// Returns pending scans that are scheduled in the future + recurring scans.
+scansRouter.get("/upcoming", async (req: AuthenticatedRequest, res) => {
+  const now = new Date();
+  const rows = await db
+    .select({
+      id: scans.id,
+      projectId: scans.projectId,
+      status: scans.status,
+      preset: scans.preset,
+      scheduledAt: scans.scheduledAt,
+      recurrence: scans.recurrence,
+      createdAt: scans.createdAt,
+      projectName: projects.name,
+    })
+    .from(scans)
+    .leftJoin(projects, eq(scans.projectId, projects.id))
+    .where(
+      and(
+        eq(scans.userId, req.user!.id),
+        eq(scans.status, "pending"),
+        gte(scans.scheduledAt, now)
+      )
+    )
+    .orderBy(scans.scheduledAt)
+    .limit(10)
+    .all();
+
+  return res.json(rows);
 });
 
 // ─── GET /api/scans ───────────────────────────────────────────────────────────
