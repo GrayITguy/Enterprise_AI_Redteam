@@ -6,6 +6,14 @@ import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 
+function safeJsonParse<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 export const projectsRouter = Router();
 projectsRouter.use(requireAuth);
 
@@ -36,7 +44,7 @@ projectsRouter.get("/", async (req: AuthenticatedRequest, res) => {
   return res.json(
     rows.map((p) => ({
       ...p,
-      providerConfig: JSON.parse(p.providerConfig),
+      providerConfig: safeJsonParse(p.providerConfig, {}),
     }))
   );
 });
@@ -95,7 +103,7 @@ projectsRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
 
   return res.json({
     ...project,
-    providerConfig: JSON.parse(project.providerConfig),
+    providerConfig: safeJsonParse(project.providerConfig, {}),
     recentScans: scanRows,
   });
 });
@@ -141,7 +149,7 @@ projectsRouter.patch("/:id", async (req: AuthenticatedRequest, res) => {
 
   return res.json({
     ...updated,
-    providerConfig: JSON.parse(updated!.providerConfig),
+    providerConfig: safeJsonParse(updated!.providerConfig, {}),
   });
 });
 

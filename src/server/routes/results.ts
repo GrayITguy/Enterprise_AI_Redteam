@@ -121,11 +121,14 @@ Write the summary covering: overall risk posture, most significant vulnerabiliti
 
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     messages: [{ role: "user", content: prompt }],
   });
 
-  const narrative = (message.content[0] as { type: string; text: string }).text;
-  return res.json({ narrative });
+  const firstBlock = message.content[0];
+  if (!firstBlock || firstBlock.type !== "text") {
+    return res.status(502).json({ error: "Unexpected response format from AI model" });
+  }
+  return res.json({ narrative: firstBlock.text });
 });

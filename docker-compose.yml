@@ -1,4 +1,4 @@
-version: "3.9"
+# docker-compose.yml — Enterprise AI Red Team Platform
 
 services:
   # ─────────────────────────────────────────
@@ -70,6 +70,12 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'process.exit(0)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ─────────────────────────────────────────
   # Redis (BullMQ queue + optional caching)

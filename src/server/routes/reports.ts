@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import fs from "fs";
+import path from "path";
 import { db } from "../../db/index.js";
 import { reports, scans } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
@@ -81,6 +82,13 @@ reportsRouter.get(
       .get();
 
     if (!report) return res.status(404).json({ error: "Report not found" });
+
+    // Validate report file path is within the expected report directory
+    const reportDir = path.resolve(process.env.REPORT_DIR ?? "./data/reports");
+    const resolvedPath = path.resolve(report.filePath);
+    if (!resolvedPath.startsWith(reportDir)) {
+      return res.status(403).json({ error: "Invalid report file path" });
+    }
 
     if (!fs.existsSync(report.filePath)) {
       return res.status(404).json({ error: "Report file not found on disk" });

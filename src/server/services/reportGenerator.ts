@@ -221,10 +221,9 @@ export class ReportGenerator {
     });
 
     const stat = fs.statSync(filePath);
-    const reportId2 = uuid();
 
     await db.insert(reports).values({
-      id: reportId2,
+      id: reportId,
       scanId,
       format: "pdf",
       filePath,
@@ -233,7 +232,7 @@ export class ReportGenerator {
     });
 
     logger.info(`[ReportGenerator] PDF report generated: ${filePath} (${stat.size} bytes)`);
-    return reportId2;
+    return reportId;
   }
 
   async generateJSON(scanId: string): Promise<string> {

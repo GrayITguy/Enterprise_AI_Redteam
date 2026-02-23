@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 1: Build backend TypeScript
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS backend-builder
+FROM node:22-alpine AS backend-builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -14,7 +14,7 @@ RUN npm run build
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2: Build frontend React app
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /app/site
 
 COPY site/package*.json ./
@@ -26,7 +26,7 @@ RUN npm run build
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: Runtime image
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 
 # Install docker CLI so Node.js can spawn Python worker containers
 RUN apk add --no-cache docker-cli wget

@@ -9,7 +9,10 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
+if (!process.env.jwtSecret && process.env.NODE_ENV === "production") {
+  throw new Error("jwtSecret environment variable is required in production");
+}
+const jwtSecret = process.env.jwtSecret ?? "dev-secret-change-me";
 
 export function requireAuth(
   req: AuthenticatedRequest,
@@ -27,7 +30,7 @@ export function requireAuth(
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as {
+    const payload = jwt.verify(token, jwtSecret) as {
       sub: string;
       email: string;
       role: "admin" | "analyst" | "viewer";
@@ -69,7 +72,7 @@ export function generateToken(user: {
 }): string {
   return jwt.sign(
     { email: user.email, role: user.role },
-    JWT_SECRET,
+    jwtSecret,
     {
       subject: user.id,
       expiresIn: (process.env.JWT_EXPIRES_IN ?? "7d") as string,

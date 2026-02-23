@@ -1,16 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Clock } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FileText, Download, Clock, AlertCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useState } from "react";
 
 export default function Reports() {
   const { data: scans = [] } = useQuery({
     queryKey: ["scans"],
     queryFn: () => api.get("/scans").then((r) => (r.data as any[]).filter((s: any) => s.status === "completed")),
   });
+
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  const generateReport = async (scanId: string, format: "pdf" | "json") => {
+    try {
+      setReportError(null);
+      const res = await api.post(`/reports/${scanId}/generate`, { format });
+      window.open(`/api/reports/${scanId}/download/${res.data.reportId}`, "_blank");
+    } catch (err: any) {
+      setReportError(err?.response?.data?.error ?? `Failed to generate ${format.toUpperCase()} report`);
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -20,6 +34,13 @@ export default function Reports() {
           Generate and download PDF security reports for completed scans
         </p>
       </div>
+
+      {reportError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{reportError}</AlertDescription>
+        </Alert>
+      )}
 
       {scans.length === 0 ? (
         <Card className="border-dashed">
@@ -62,19 +83,13 @@ export default function Reports() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={async () => {
-                      const res = await api.post(`/reports/${scan.id}/generate`, { format: "json" });
-                      window.open(`/api/reports/${scan.id}/download/${res.data.reportId}`, "_blank");
-                    }}
+                    onClick={() => generateReport(scan.id, "json")}
                   >
                     JSON
                   </Button>
                   <Button
                     size="sm"
-                    onClick={async () => {
-                      const res = await api.post(`/reports/${scan.id}/generate`, { format: "pdf" });
-                      window.open(`/api/reports/${scan.id}/download/${res.data.reportId}`, "_blank");
-                    }}
+                    onClick={() => generateReport(scan.id, "pdf")}
                   >
                     <Download className="mr-1.5 h-3.5 w-3.5" />
                     PDF Report
