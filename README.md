@@ -7,7 +7,19 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 - **Self-hosted** — your data never leaves your infrastructure
 - **Air-gapped ready** — works with Ollama, no mandatory cloud
 - **One command install** — `docker compose up -d`
-- **40+ vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
+- **41 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
+
+---
+
+## Features
+
+- **Dashboard** — severity charts, pass-rate trend (last 30 scans), upcoming scans widget, and a notification badge showing newly completed scans
+- **Scan Builder** — 41-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins
+- **Scan Scheduler** — schedule one-off or recurring scans (daily / weekly / monthly) with email notifications (always / failure-only / never)
+- **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and a Claude-powered executive summary
+- **Reports** — generate and download PDF or JSON reports per scan
+- **License Management** — free tier included; activate a commercial license key for unlimited concurrent scans
+- **Team Access** — JWT-based auth with admin / analyst / viewer roles and invite-code registration
 
 ---
 
@@ -100,6 +112,8 @@ Express (Node.js + TypeScript) — port 3000 (15500 external)
     │
     ├── Drizzle ORM → SQLite (./data/eart.db) [or Postgres]
     ├── BullMQ → Redis (scan job queue)
+    ├── Scheduler → polls every 5 min for due recurring scans
+    ├── Nodemailer → SMTP email notifications
     └── docker run --rm → Python workers (JSONL stdio)
                               ├── eart-garak:latest
                               ├── eart-pyrit:latest
@@ -135,7 +149,7 @@ enterpriseairedteam/
 │   ├── server/
 │   │   ├── app.ts              # Express entry point
 │   │   ├── config/
-│   │   │   └── pluginCatalog.ts # 29 plugins + presets
+│   │   │   └── pluginCatalog.ts # 41 plugins + presets
 │   │   ├── middleware/
 │   │   │   ├── auth.ts          # JWT middleware
 │   │   │   └── errorHandler.ts
@@ -143,6 +157,8 @@ enterpriseairedteam/
 │   │   ├── services/           # Business logic
 │   │   │   ├── scanner.ts      # Scan orchestrator
 │   │   │   ├── dockerRunner.ts # Python worker spawner
+│   │   │   ├── emailService.ts # Nodemailer notifications
+│   │   │   ├── scheduler.ts    # Recurring scan scheduler
 │   │   │   └── reportGenerator.ts
 │   │   └── workers/
 │   │       └── scanWorker.ts   # BullMQ worker process
@@ -171,12 +187,14 @@ enterpriseairedteam/
 | POST | `/api/auth/register` | Register with invite code |
 | POST | `/api/auth/login` | Login → JWT |
 | GET | `/api/auth/me` | Current user |
+| POST | `/api/auth/invite` | Generate invite code (admin only) |
 
 ### Projects
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/projects` | List projects |
 | POST | `/api/projects` | Create project |
+| GET | `/api/projects/:id` | Get project details |
 | PATCH | `/api/projects/:id` | Update project |
 | DELETE | `/api/projects/:id` | Archive project |
 
@@ -184,17 +202,33 @@ enterpriseairedteam/
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/scans/catalog` | Plugin catalog + presets |
-| GET | `/api/scans` | List scans |
+| GET | `/api/scans/stats` | Aggregated severity statistics |
+| GET | `/api/scans/history` | Last 30 completed scans (trend chart data) |
+| GET | `/api/scans/upcoming` | Scheduled & recurring scans widget |
+| GET | `/api/scans` | List all scans |
 | POST | `/api/scans` | Create + queue scan |
 | GET | `/api/scans/:id` | Scan status |
 | GET | `/api/scans/:id/results` | Scan findings |
 | POST | `/api/scans/:id/cancel` | Cancel running scan |
 
+### Results
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/results/scans/:scanId/summary` | Scan summary statistics |
+| POST | `/api/results/scans/:scanId/narrative` | Generate AI executive summary |
+
 ### Reports
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/reports/:scanId` | List reports for a scan |
 | POST | `/api/reports/:scanId/generate` | Generate PDF/JSON report |
-| GET | `/api/reports/:scanId/download/:reportId` | Download report |
+| GET | `/api/reports/:scanId/download/:reportId` | Download report file |
+
+### License
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/license` | Check license status |
+| POST | `/api/license/activate` | Activate a license key |
 
 ---
 
@@ -207,7 +241,12 @@ enterpriseairedteam/
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `REPORT_DIR` | `./data/reports` | Where PDF/JSON reports are stored |
 | `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
+| `ANTHROPIC_API_KEY` | — | API key for Claude-powered AI summaries |
 | `SMTP_HOST` | — | SMTP server for email notifications |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USER` | — | SMTP username |
+| `SMTP_PASS` | — | SMTP password |
+| `SMTP_FROM` | — | From address for notification emails |
 | `CORS_ORIGIN` | `*` | Allowed CORS origin(s) |
 
 ---
@@ -218,7 +257,7 @@ enterpriseairedteam/
 |--------|---------|-------------|
 | `quick` | 8 | Core vulnerability check — under 5 min |
 | `owasp` | 20 | Full OWASP LLM Top 10 coverage |
-| `full` | 29 | Everything — all 4 tools, all categories |
+| `full` | 41 | Everything — all 4 tools, all categories |
 
 ---
 

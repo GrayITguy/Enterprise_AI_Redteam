@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar, Bell, Repeat } from "lucide-react";
+import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar, Bell, Repeat, Search, X } from "lucide-react";
 
 /** Convert a datetime-local string (YYYY-MM-DDTHH:MM) to ISO-8601. */
 function localToIso(local: string): string {
@@ -31,6 +31,45 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "border-green-500/40 text-green-400 bg-green-500/10",
 };
 
+function PluginCard({
+  plugin,
+  selected,
+  onToggle,
+}: {
+  plugin: any;
+  selected: boolean;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div
+      onClick={() => onToggle(plugin.id)}
+      className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+        selected ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{plugin.name}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{plugin.description}</p>
+        </div>
+        <div className="flex flex-col gap-1 shrink-0">
+          <Badge
+            variant="outline"
+            className={`text-[10px] px-1 py-0 ${SEVERITY_COLORS[plugin.severity]}`}
+          >
+            {plugin.severity}
+          </Badge>
+          {plugin.owaspCategory && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0">
+              {plugin.owaspCategory}
+            </Badge>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ScanBuilder() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -40,6 +79,10 @@ export default function ScanBuilder() {
   const [selectedPreset, setSelectedPreset] = useState<string>("quick");
   const [selectedPlugins, setSelectedPlugins] = useState<Set<string>>(new Set());
   const [usePreset, setUsePreset] = useState(true);
+
+  // Plugin search/filter state
+  const [pluginSearch, setPluginSearch] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<string | null>(null);
 
   // Scheduler state
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
@@ -118,6 +161,20 @@ export default function ScanBuilder() {
     acc[plugin.tool].push(plugin);
     return acc;
   }, {});
+
+  // Filtered view of all plugins (used in manual mode when a filter is active)
+  const filteredPlugins = plugins.filter((p: any) => {
+    const q = pluginSearch.toLowerCase();
+    const matchesSearch =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q) ||
+      p.owaspCategory?.toLowerCase().includes(q);
+    const matchesSeverity = !severityFilter || p.severity === severityFilter;
+    return matchesSearch && matchesSeverity;
+  });
+  const isFiltered = pluginSearch.trim() !== "" || severityFilter !== null;
 
   const canSubmit = selectedProjectId && activePlugins.size > 0;
   const scheduledInPast =
@@ -209,55 +266,105 @@ export default function ScanBuilder() {
 
           {/* Manual plugin grid */}
           {!usePreset && (
-            <Tabs defaultValue={Object.keys(toolGroups)[0] ?? "promptfoo"}>
-              <TabsList className="flex-wrap h-auto">
-                {Object.keys(toolGroups).map((tool) => (
-                  <TabsTrigger key={tool} value={tool} className="capitalize">
-                    {tool}
-                    <Badge variant="secondary" className="ml-2 text-xs">
-                      {toolGroups[tool].filter((p: any) => activePlugins.has(p.id)).length}
-                      /{toolGroups[tool].length}
-                    </Badge>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {Object.entries(toolGroups).map(([tool, toolPlugins]) => (
-                <TabsContent key={tool} value={tool} className="mt-4">
+            <div className="space-y-3">
+              {/* Search + severity filter bar */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search plugins…"
+                    value={pluginSearch}
+                    onChange={(e) => setPluginSearch(e.target.value)}
+                    className="pl-8 h-8 text-sm"
+                  />
+                  {pluginSearch && (
+                    <button
+                      onClick={() => setPluginSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {/* Severity filter chips */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {["critical", "high", "medium", "low"].map((sev) => (
+                    <button
+                      key={sev}
+                      onClick={() => setSeverityFilter(severityFilter === sev ? null : sev)}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize transition-colors ${
+                        severityFilter === sev
+                          ? SEVERITY_COLORS[sev] + " ring-1 ring-current"
+                          : "border-border text-muted-foreground hover:border-foreground/40"
+                      }`}
+                    >
+                      {sev}
+                    </button>
+                  ))}
+                </div>
+                {isFiltered && (
+                  <span className="text-xs text-muted-foreground">
+                    {filteredPlugins.length} of {plugins.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Flat filtered results */}
+              {isFiltered ? (
+                filteredPlugins.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-sm text-muted-foreground">
+                    <Search className="mb-2 h-5 w-5 opacity-40" />
+                    No plugins match your filter
+                    <button
+                      className="mt-2 text-xs text-primary underline"
+                      onClick={() => { setPluginSearch(""); setSeverityFilter(null); }}
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {(toolPlugins as any[]).map((plugin: any) => (
-                      <div
+                    {filteredPlugins.map((plugin: any) => (
+                      <PluginCard
                         key={plugin.id}
-                        onClick={() => togglePlugin(plugin.id)}
-                        className={`cursor-pointer rounded-lg border p-3 transition-colors ${
-                          activePlugins.has(plugin.id)
-                            ? "border-primary bg-primary/10"
-                            : "border-border hover:bg-muted/50"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{plugin.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                              {plugin.description}
-                            </p>
-                          </div>
-                          <div className="flex flex-col gap-1 shrink-0">
-                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${SEVERITY_COLORS[plugin.severity]}`}>
-                              {plugin.severity}
-                            </Badge>
-                            {plugin.owaspCategory && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                {plugin.owaspCategory}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                        plugin={plugin}
+                        selected={activePlugins.has(plugin.id)}
+                        onToggle={togglePlugin}
+                      />
                     ))}
                   </div>
-                </TabsContent>
-              ))}
-            </Tabs>
+                )
+              ) : (
+                /* Tabbed view when no filter */
+                <Tabs defaultValue={Object.keys(toolGroups)[0] ?? "promptfoo"}>
+                  <TabsList className="flex-wrap h-auto">
+                    {Object.keys(toolGroups).map((tool) => (
+                      <TabsTrigger key={tool} value={tool} className="capitalize">
+                        {tool}
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {toolGroups[tool].filter((p: any) => activePlugins.has(p.id)).length}
+                          /{toolGroups[tool].length}
+                        </Badge>
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  {Object.entries(toolGroups).map(([tool, toolPlugins]) => (
+                    <TabsContent key={tool} value={tool} className="mt-4">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {(toolPlugins as any[]).map((plugin: any) => (
+                          <PluginCard
+                            key={plugin.id}
+                            plugin={plugin}
+                            selected={activePlugins.has(plugin.id)}
+                            onToggle={togglePlugin}
+                          />
+                        ))}
+                      </div>
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
