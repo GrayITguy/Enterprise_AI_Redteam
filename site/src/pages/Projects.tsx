@@ -246,6 +246,7 @@ export default function Projects() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Archive project ${project.name}`}
                       className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
                       onClick={() => {
                         if (confirm(`Archive project "${project.name}"?`)) {

@@ -37,6 +37,8 @@ function FindingRow({ result }: { result: any }) {
       <button
         className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
         onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label={`${result.severity} ${result.testName} - ${result.passed ? "passed" : "failed"}`}
       >
         <div className="flex items-center gap-3 min-w-0">
           <Badge

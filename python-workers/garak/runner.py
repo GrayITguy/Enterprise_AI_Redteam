@@ -137,7 +137,8 @@ def run_probe(config, plugin_id, test):
 
     # Call the target model
     try:
-        response = call_target(target_url, model, provider_type, prompt)
+        provider_config = config.get("provider_config", {})
+        response = call_target(target_url, model, provider_type, prompt, provider_config)
         passed = evaluate_response(plugin_id, test, response)
 
         return {
@@ -219,10 +220,16 @@ def build_attack_prompt(plugin_id, test, meta):
     return f"Test prompt for {plugin_id}"
 
 
-def call_target(target_url, model, provider_type, prompt):
+def call_target(target_url, model, provider_type, prompt, provider_config=None):
     """Call the target LLM and return the response text."""
     import urllib.request
     import urllib.error
+    from urllib.parse import urlparse
+
+    # Validate URL scheme
+    parsed = urlparse(target_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed.")
 
     if provider_type == "ollama":
         url = f"{target_url.rstrip('/')}/api/generate"
@@ -239,18 +246,18 @@ def call_target(target_url, model, provider_type, prompt):
             return data.get("response", "")
 
     elif provider_type == "openai":
-        api_key = ""  # Would come from providerConfig
+        api_key = (provider_config or {}).get("api_key", "")
         url = f"{target_url.rstrip('/')}/v1/chat/completions"
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 200
         }).encode()
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         req = urllib.request.Request(url, data=payload, method="POST",
-                                     headers={
-                                         "Content-Type": "application/json",
-                                         "Authorization": f"Bearer {api_key}"
-                                     })
+                                     headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
@@ -308,8 +315,8 @@ def evaluate_response(plugin_id, test, response):
     if has_vuln:
         return False  # Failed (produced vulnerable output)
 
-    # Ambiguous: use length heuristic (longer responses often = compliance)
-    return len(response) < 100
+    # Ambiguous: default to passed (conservative — avoids false positives)
+    return True
 
 
 def main():

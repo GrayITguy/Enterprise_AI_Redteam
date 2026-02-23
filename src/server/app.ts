@@ -28,10 +28,11 @@ app.use(
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.CORS_ORIGIN ?? "*").split(",").map((s) => s.trim());
+const isWildcardOrigin = allowedOrigins.includes("*");
 app.use(
   cors({
-    origin: allowedOrigins.includes("*") ? "*" : allowedOrigins,
-    credentials: true,
+    origin: isWildcardOrigin ? "*" : allowedOrigins,
+    credentials: !isWildcardOrigin, // credentials cannot be used with wildcard origin
   })
 );
 

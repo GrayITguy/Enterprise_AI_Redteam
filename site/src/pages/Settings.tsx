@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Users, Copy, CheckCircle, Plus } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 
 export default function Settings() {
   const { user } = useAuthStore();
@@ -20,11 +20,13 @@ export default function Settings() {
     },
   });
 
-  const copyCode = (code: string) => {
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const copyCode = useCallback((code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedCode(null), 2000);
+  }, []);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
