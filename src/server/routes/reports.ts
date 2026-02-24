@@ -83,6 +83,15 @@ reportsRouter.get(
 
     if (!report) return res.status(404).json({ error: "Report not found" });
 
+    // Verify the parent scan belongs to the requesting user
+    const scan = await db
+      .select({ id: scans.id })
+      .from(scans)
+      .where(and(eq(scans.id, report.scanId), eq(scans.userId, req.user!.id)))
+      .get();
+
+    if (!scan) return res.status(404).json({ error: "Report not found" });
+
     // Validate report file path is within the expected report directory
     const reportDir = path.resolve(process.env.REPORT_DIR ?? "./data/reports");
     const resolvedPath = path.resolve(report.filePath);

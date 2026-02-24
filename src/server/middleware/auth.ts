@@ -9,10 +9,10 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-if (!process.env.jwtSecret && process.env.NODE_ENV === "production") {
-  throw new Error("jwtSecret environment variable is required in production");
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("JWT_SECRET environment variable is required in production");
 }
-const jwtSecret = process.env.jwtSecret ?? "dev-secret-change-me";
+const jwtSecret = process.env.JWT_SECRET ?? "dev-secret-change-me";
 
 export function requireAuth(
   req: AuthenticatedRequest,
