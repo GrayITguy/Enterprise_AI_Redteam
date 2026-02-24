@@ -75,7 +75,8 @@ export function generateToken(user: {
     jwtSecret,
     {
       subject: user.id,
-      expiresIn: (process.env.JWT_EXPIRES_IN ?? "7d") as string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expiresIn: (process.env.JWT_EXPIRES_IN ?? "7d") as any,
     }
   );
 }
