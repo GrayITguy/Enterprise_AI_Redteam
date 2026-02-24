@@ -117,8 +117,8 @@ export class DockerRunner {
 
       child.on("error", (err) => {
         logger.error(`[DockerRunner] Failed to spawn docker for ${tool}: ${err.message}`);
-        // Return empty results rather than crashing the whole scan
-        resolve([]);
+        clearTimeout(timeout);
+        reject(err);
       });
 
       // Timeout: 30 minutes per tool
