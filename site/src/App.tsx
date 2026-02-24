@@ -18,6 +18,7 @@ const Projects = lazy(() => import("@/pages/Projects"));
 const ScanBuilder = lazy(() => import("@/pages/ScanBuilder"));
 const ScanDetail = lazy(() => import("@/pages/ScanDetail"));
 const Results = lazy(() => import("@/pages/Results"));
+const Remediation = lazy(() => import("@/pages/Remediation"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const License = lazy(() => import("@/pages/License"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -73,6 +74,7 @@ function AppRoutes() {
           <Route path="scans/new" element={<ScanBuilder />} />
           <Route path="scans/:id" element={<ScanDetail />} />
           <Route path="scans/:id/results" element={<Results />} />
+          <Route path="scans/:id/remediate" element={<Remediation />} />
           <Route path="reports" element={<Reports />} />
           <Route path="license" element={<License />} />
           <Route path="settings" element={<Settings />} />
