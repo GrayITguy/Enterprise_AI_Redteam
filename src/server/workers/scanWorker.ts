@@ -21,7 +21,8 @@ const worker = new Worker<ScanJobData>(
     });
   },
   {
-    connection: redisConnection,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    connection: redisConnection as any,
     concurrency: 2,
   }
 );
