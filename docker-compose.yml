@@ -95,8 +95,8 @@ services:
 
   # ─────────────────────────────────────────
   # Python Worker: Garak
-  # Usage: docker compose --profile workers build
-  # Then Node.js calls: docker run --rm -i eart-garak:latest
+  # Built automatically with `docker compose build`.
+  # Node.js calls: docker run --rm -i eart-garak:latest per scan.
   # ─────────────────────────────────────────
   garak-worker:
     build:
@@ -104,8 +104,6 @@ services:
       dockerfile: Dockerfile
     image: eart-garak:latest
     container_name: eart-garak-build
-    profiles:
-      - workers
     command: ["echo", "garak worker image built successfully"]
 
   # ─────────────────────────────────────────
@@ -117,8 +115,6 @@ services:
       dockerfile: Dockerfile
     image: eart-pyrit:latest
     container_name: eart-pyrit-build
-    profiles:
-      - workers
     command: ["echo", "pyrit worker image built successfully"]
 
   # ─────────────────────────────────────────
@@ -130,8 +126,6 @@ services:
       dockerfile: Dockerfile
     image: eart-deepteam:latest
     container_name: eart-deepteam-build
-    profiles:
-      - workers
     command: ["echo", "deepteam worker image built successfully"]
 
   # ─────────────────────────────────────────

@@ -97,6 +97,9 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-bootstrap();
+// Only bootstrap (listen + migrate) when running as the main process, not during tests
+if (process.env.NODE_ENV !== "test") {
+  bootstrap();
+}
 
 export default app;
