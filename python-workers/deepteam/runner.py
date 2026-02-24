@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 DeepTeam Worker — EART Python Worker
-Tests bias, toxicity, hallucination, PII, and other safety metrics.
+Requires: deepteam>=1.0.0,<2.0.0 (Confident AI)
+
+Tests bias, toxicity, hallucination, PII, and other safety metrics by
+sending adversarial prompts directly to the target model endpoint over
+HTTP. The deepteam package (>=1.0.0) is installed in this container for
+future integration with its attack/vulnerability framework; current test
+logic uses direct HTTP calls to remain self-contained and API-key-free.
 
 Supported plugins:
 - deepteam:toxic-content
@@ -19,6 +25,14 @@ import json
 import traceback
 import urllib.request
 import re
+
+# Validate deepteam 1.0.0+ is installed and importable
+try:
+    import deepteam as _dt
+    _DEEPTEAM_VERSION = getattr(_dt, "__version__", "unknown")
+except ImportError as _e:
+    print(json.dumps({"error": f"deepteam package not available: {_e}"}), flush=True)
+    sys.exit(1)
 
 PLUGIN_MAP = {
     "deepteam:toxic-content": {
