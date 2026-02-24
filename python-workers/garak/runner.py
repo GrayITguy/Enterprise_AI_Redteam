@@ -29,7 +29,6 @@ Output (one JSON per line):
 import sys
 import json
 import traceback
-import random
 
 # Plugin ID → (garak probe class, category, severity, owasp_category)
 PLUGIN_MAP = {
@@ -164,8 +163,8 @@ def run_probe(config, plugin_id, test):
             "owasp_category": plugin_meta.get("owasp_category"),
             "prompt": prompt[:200] if prompt else None,
             "response": None,
-            "passed": True,  # Error = can't confirm vulnerability
-            "evidence": {"error": str(e), "model": model}
+            "passed": False,
+            "evidence": {"error": str(e), "errored": True, "model": model}
         }
 
 
@@ -260,7 +259,10 @@ def call_target(target_url, model, provider_type, prompt, provider_config=None):
                                      headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
-            return data["choices"][0]["message"]["content"]
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError(f"Unexpected response structure: {str(data)[:200]}")
+            return (choices[0].get("message") or {}).get("content", "")
 
     else:
         # Generic OpenAI-compatible endpoint
@@ -274,7 +276,10 @@ def call_target(target_url, model, provider_type, prompt, provider_config=None):
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read())
-            return data["choices"][0]["message"]["content"]
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError(f"Unexpected response structure: {str(data)[:200]}")
+            return (choices[0].get("message") or {}).get("content", "")
 
 
 def evaluate_response(plugin_id, test, response):
@@ -359,8 +364,8 @@ def main():
                     "owasp_category": plugin_meta.get("owasp_category"),
                     "prompt": None,
                     "response": None,
-                    "passed": True,
-                    "evidence": {"error": str(e), "traceback": traceback.format_exc()[-500:]}
+                    "passed": False,
+                    "evidence": {"error": str(e), "errored": True, "traceback": traceback.format_exc()[-500:]}
                 }
                 print(json.dumps(error_result), flush=True)
 

@@ -63,6 +63,11 @@ def call_target(config, prompt):
     model = config.get("model", "default")
     provider_type = config.get("provider_type", "custom")
 
+    from urllib.parse import urlparse
+    parsed = urlparse(target_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed.")
+
     if provider_type == "ollama":
         url = f"{target_url.rstrip('/')}/api/generate"
         payload = json.dumps({
@@ -87,7 +92,10 @@ def call_target(config, prompt):
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=45) as resp:
             data = json.loads(resp.read())
-            return data["choices"][0]["message"]["content"]
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError(f"Unexpected response structure: {str(data)[:200]}")
+            return (choices[0].get("message") or {}).get("content", "")
 
 
 def run_crescendo(config):
@@ -131,8 +139,8 @@ def run_crescendo(config):
                 "owasp_category": "LLM01",
                 "prompt": turn,
                 "response": None,
-                "passed": True,
-                "evidence": {"error": str(e)}
+                "passed": False,
+                "evidence": {"error": str(e), "errored": True}
             })
 
     return results
@@ -186,8 +194,8 @@ def run_skeleton_key(config):
                 "owasp_category": "LLM01",
                 "prompt": attempt["prompt"][:400],
                 "response": None,
-                "passed": True,
-                "evidence": {"error": str(e)}
+                "passed": False,
+                "evidence": {"error": str(e), "errored": True}
             })
 
     return results
@@ -227,8 +235,8 @@ def run_many_shot(config):
             "owasp_category": "LLM01",
             "prompt": prompt[:300],
             "response": None,
-            "passed": True,
-            "evidence": {"error": str(e)}
+            "passed": False,
+            "evidence": {"error": str(e), "errored": True}
         }]
 
 
@@ -272,8 +280,8 @@ def run_prompt_shield_bypass(config):
                 "owasp_category": "LLM01",
                 "prompt": attempt["prompt"],
                 "response": None,
-                "passed": True,
-                "evidence": {"error": str(e)}
+                "passed": False,
+                "evidence": {"error": str(e), "errored": True}
             })
 
     return results
@@ -322,8 +330,8 @@ def run_agentic_injection(config):
                 "owasp_category": "LLM08",
                 "prompt": injection["prompt"][:400],
                 "response": None,
-                "passed": True,
-                "evidence": {"error": str(e)}
+                "passed": False,
+                "evidence": {"error": str(e), "errored": True}
             })
 
     return results
@@ -413,8 +421,8 @@ def main():
                 "owasp_category": plugin_meta.get("owasp_category"),
                 "prompt": None,
                 "response": None,
-                "passed": True,
-                "evidence": {"error": str(e), "traceback": traceback.format_exc()[-500:]}
+                "passed": False,
+                "evidence": {"error": str(e), "errored": True, "traceback": traceback.format_exc()[-500:]}
             }), flush=True)
 
 
