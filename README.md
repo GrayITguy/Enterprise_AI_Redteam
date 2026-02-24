@@ -6,7 +6,7 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 
 - **Self-hosted** — your data never leaves your infrastructure
 - **Air-gapped ready** — works with Ollama, no mandatory cloud
-- **One command install** — `docker compose up -d`
+- **One command install** — `bash scripts/install.sh` handles everything
 - **41 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
 
 ---
@@ -30,35 +30,43 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 - Docker + Docker Compose v2
 - 4 GB RAM minimum (8 GB recommended for running local models)
 
-### 1. Clone and configure
+### One-command install (Linux / macOS)
+
+```bash
+git clone https://github.com/yourusername/enterpriseairedteam.git
+cd enterpriseairedteam
+bash scripts/install.sh
+```
+
+The installer:
+1. Checks Docker is available and running
+2. Generates `.env` with a secure random `JWT_SECRET`
+3. Builds all Docker images — app, worker, and all three Python security tool images
+4. Starts all services and waits for the health check
+
+Visit **http://localhost:15500** and complete the setup wizard to create your admin account.
+
+### Windows install
+
+```bat
+git clone https://github.com/yourusername/enterpriseairedteam.git
+cd enterpriseairedteam
+scripts\install.bat
+```
+
+### Manual install
 
 ```bash
 git clone https://github.com/yourusername/enterpriseairedteam.git
 cd enterpriseairedteam
 cp .env.example .env
-# Edit .env — at minimum, set a strong JWT_SECRET
-```
-
-### 2. Start the platform
-
-```bash
+# Edit .env — set a strong JWT_SECRET (openssl rand -hex 32)
+mkdir -p data/reports keys logs
+docker compose build   # builds app + all Python security workers
 docker compose up -d
 ```
 
-Visit **http://localhost:15500** and complete the setup wizard to create your admin account.
-
-### 3. (Optional) Build Python security testing workers
-
-The platform uses containerized Python tools for advanced testing:
-
-```bash
-# Build all three worker images (~2-3 GB total)
-docker compose --profile workers build
-```
-
-Workers are launched on-demand by the platform when running scans. You only need them if you want to use Garak, PyRIT, or DeepTeam tests.
-
-### 4. (Optional) Run local AI models with Ollama
+### (Optional) Run local AI models with Ollama
 
 ```bash
 docker compose --profile local-ai up -d
@@ -270,6 +278,59 @@ enterpriseairedteam/
 | `quick` | 8 | Core vulnerability check — under 5 min |
 | `owasp` | 20 | Full OWASP LLM Top 10 coverage |
 | `full` | 41 | Everything — all 4 tools, all categories |
+
+---
+
+## Testing
+
+EART has a full test suite across all layers.
+
+### Backend tests (unit + integration)
+
+```bash
+npm test                    # run all tests once
+npm run test:watch          # watch mode
+npm run test:coverage       # with coverage report
+```
+
+Tests use Vitest with an in-memory SQLite database — no Redis or Docker required.
+
+### Frontend tests
+
+```bash
+cd site
+npm test                    # run all component tests
+npm run test:watch          # watch mode
+```
+
+Tests use Vitest + React Testing Library in a jsdom environment.
+
+### End-to-end tests
+
+```bash
+# Start the dev servers first:
+npm run dev &
+cd site && npm run dev &
+
+# Then run E2E tests:
+npm run test:e2e
+```
+
+E2E tests use Playwright against the live dev servers.
+
+### CI
+
+GitHub Actions runs type-check, backend tests, frontend tests, and a full build on every push and pull request. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+---
+
+## Contributing
+
+1. Fork the repository and create a feature branch
+2. Make your changes with tests
+3. Run `npm test && cd site && npm test` to verify
+4. Ensure `npm run build:all` succeeds
+5. Open a pull request
 
 ---
 

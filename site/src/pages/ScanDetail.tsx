@@ -21,10 +21,12 @@ export default function ScanDetail() {
   const { data: scan, isLoading } = useQuery({
     queryKey: ["scan", id],
     queryFn: () => api.get(`/scans/${id}`).then((r) => r.data as any),
-    refetchInterval: (data) =>
-      data && !["completed", "failed", "cancelled"].includes(data.status)
+    refetchInterval: (query) => {
+      const scanData = query.state.data as { status?: string } | undefined;
+      return scanData && !["completed", "failed", "cancelled"].includes(scanData.status ?? "")
         ? 3000
-        : false,
+        : false;
+    },
   });
 
   if (isLoading) {
