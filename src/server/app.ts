@@ -8,6 +8,7 @@ import { projectsRouter } from "./routes/projects.js";
 import { scansRouter } from "./routes/scans.js";
 import { resultsRouter } from "./routes/results.js";
 import { reportsRouter } from "./routes/reports.js";
+import { remediationRouter } from "./routes/remediation.js";
 import { licenseRouter } from "./routes/license.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
@@ -63,6 +64,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/scans", scansRouter);
 app.use("/api/results", resultsRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/remediation", remediationRouter);
 app.use("/api/license", licenseRouter);
 
 // ─── Serve React SPA in production ───────────────────────────────────────────

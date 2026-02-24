@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell,
 } from "recharts";
-import { Download, Filter, ChevronDown, ChevronRight, Shield, Sparkles, AlertCircle } from "lucide-react";
+import { Download, Filter, ChevronDown, ChevronRight, Shield, Sparkles, AlertCircle, Wrench } from "lucide-react";
 import { useState } from "react";
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -93,6 +93,7 @@ function FindingRow({ result }: { result: any }) {
 
 export default function Results() {
   const { id: scanId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [severityFilter, setSeverityFilter] = useState("all");
   const [showFailedOnly, setShowFailedOnly] = useState(true);
 
@@ -169,14 +170,24 @@ export default function Results() {
             {scan?.status === "running" && " · updating live"}
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => reportMutation.mutate()}
-          disabled={reportMutation.isPending || scan?.status !== "completed"}
-        >
-          <Download className="mr-2 h-4 w-4" />
-          {reportMutation.isPending ? "Generating..." : "Export PDF"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            onClick={() => navigate(`/scans/${scanId}/remediate`)}
+            disabled={scan?.status !== "completed" || results.filter((r: any) => !r.passed).length === 0}
+          >
+            <Wrench className="mr-2 h-4 w-4" />
+            Remediate
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => reportMutation.mutate()}
+            disabled={reportMutation.isPending || scan?.status !== "completed"}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {reportMutation.isPending ? "Generating..." : "Export PDF"}
+          </Button>
+        </div>
       </div>
 
       {/* Severity summary cards */}
