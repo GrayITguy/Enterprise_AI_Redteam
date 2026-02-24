@@ -16,7 +16,8 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 - **Dashboard** — severity charts, pass-rate trend (last 30 scans), upcoming scans widget, and a notification badge showing newly completed scans
 - **Scan Builder** — 41-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins
 - **Scan Scheduler** — schedule one-off or recurring scans (daily / weekly / monthly) with email notifications (always / failure-only / never)
-- **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and a Claude-powered executive summary
+- **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and an AI-powered executive summary
+- **Remediation Engine** — AI-generated remediation plans with risk scoring (0–100), root-cause analysis per OWASP category, copy-pasteable system-prompt hardening, guardrail configs, and one-click verification re-scans — works fully offline via local Ollama
 - **Reports** — generate and download PDF or JSON reports per scan
 - **License Management** — free tier included; activate a commercial license key for unlimited concurrent scans
 - **Team Access** — JWT-based auth with admin / analyst / viewer roles and invite-code registration
@@ -114,6 +115,7 @@ Express (Node.js + TypeScript) — port 3000 (15500 external)
     ├── BullMQ → Redis (scan job queue)
     ├── Scheduler → polls every 5 min for due recurring scans
     ├── Nodemailer → SMTP email notifications
+    ├── Remediation → calls project's own LLM (provider-agnostic)
     └── docker run --rm → Python workers (JSONL stdio)
                               ├── eart-garak:latest
                               ├── eart-pyrit:latest
@@ -154,6 +156,8 @@ enterpriseairedteam/
 │   │   │   ├── auth.ts          # JWT middleware
 │   │   │   └── errorHandler.ts
 │   │   ├── routes/             # API route handlers
+│   │   │   ├── remediation.ts  # AI remediation + verify re-scans
+│   │   │   └── ...
 │   │   ├── services/           # Business logic
 │   │   │   ├── scanner.ts      # Scan orchestrator
 │   │   │   ├── dockerRunner.ts # Python worker spawner
@@ -168,7 +172,8 @@ enterpriseairedteam/
 │   └── license-validator.ts    # Offline RSA license check
 ├── site/                       # React frontend (Vite)
 │   └── src/
-│       ├── pages/
+│       ├── pages/              # Dashboard, ScanBuilder, Results,
+│       │                       # Remediation, Reports, Settings, …
 │       └── components/
 └── python-workers/
     ├── garak/                  # Garak runner container
@@ -217,6 +222,12 @@ enterpriseairedteam/
 | GET | `/api/results/scans/:scanId/summary` | Scan summary statistics |
 | POST | `/api/results/scans/:scanId/narrative` | Generate AI executive summary |
 
+### Remediation
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/remediation/scans/:scanId/generate` | Generate AI remediation plan |
+| POST | `/api/remediation/scans/:scanId/verify` | Re-run only failed plugins to verify fixes |
+
 ### Reports
 | Method | Path | Description |
 |--------|------|-------------|
@@ -241,7 +252,8 @@ enterpriseairedteam/
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `REPORT_DIR` | `./data/reports` | Where PDF/JSON reports are stored |
 | `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
-| `ANTHROPIC_API_KEY` | — | API key for Claude-powered AI summaries |
+| `ANTHROPIC_API_KEY` | — | Optional cloud fallback for AI summaries and remediation (not required when using Ollama or other project providers) |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model to use when falling back to Anthropic API |
 | `SMTP_HOST` | — | SMTP server for email notifications |
 | `SMTP_PORT` | `587` | SMTP port |
 | `SMTP_USER` | — | SMTP username |
