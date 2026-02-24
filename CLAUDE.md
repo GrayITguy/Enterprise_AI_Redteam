@@ -195,3 +195,11 @@ npm run db:migrate
 1. Edit `src/db/schema.ts`
 2. Run `npm run db:generate` to create a migration file
 3. Run `npm run db:migrate` to apply it
+
+## Workflow
+
+Before marking any task complete:
+
+1. Run tests
+2. Update `README.md` if behavior, setup, or usage changed
+3. Update `CHANGELOG.md` with a brief entry
