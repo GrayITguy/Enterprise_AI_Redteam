@@ -97,7 +97,9 @@ build_images() {
   echo "   Subsequent runs use the Docker layer cache and complete in seconds."
   echo ""
 
-  docker compose build 2>&1 | grep -E "^(#|=|Step|Successfully|ERROR|error)" || true
+  if ! docker compose build; then
+    fail "Docker image build failed. Check the output above for details."
+  fi
   ok "All images built successfully"
 }
 
