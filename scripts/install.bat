@@ -75,7 +75,11 @@ echo [OK] Images built.
 
 REM ─── Start services ──────────────────────────────────────────────────────────
 echo.
-echo [4/5] Starting services...
+echo [4/5] Removing any existing containers to avoid name conflicts...
+docker compose down --remove-orphans 2>nul
+echo [OK] Existing containers removed (if any).
+
+echo Starting services...
 docker compose up -d
 if %errorlevel% neq 0 (
     echo ERROR: Failed to start services.

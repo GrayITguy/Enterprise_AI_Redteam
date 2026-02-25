@@ -106,6 +106,10 @@ build_images() {
 # ─── Start services ──────────────────────────────────────────────────────────
 
 start_services() {
+  step "Removing any existing containers to avoid name conflicts..."
+  docker compose down --remove-orphans 2>/dev/null || true
+  ok "Existing containers removed"
+
   step "Starting services..."
   docker compose up -d
   ok "Services started"
