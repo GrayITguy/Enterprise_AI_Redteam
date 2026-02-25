@@ -11,6 +11,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
+# tsc only compiles .ts files — copy migration SQL/meta files so Drizzle can find them at runtime
+RUN if [ -d src/db/migrations ]; then cp -r src/db/migrations dist/db/migrations; fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2: Build frontend React app

@@ -12,12 +12,11 @@ export async function runMigrations(): Promise<void> {
   const hasMigrations = fs.existsSync(journalPath);
 
   if (!hasMigrations) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log("[DB] No migrations found — applying schema directly (development mode)...");
-      applySchemaDirectly();
-      return;
-    }
-    throw new Error(`No migration files found at ${migrationsFolder}. Run 'drizzle-kit generate' to create them.`);
+    // No migration files exist yet (fresh install before drizzle-kit generate has been run).
+    // Apply schema directly regardless of environment so the container can start.
+    console.log("[DB] No migrations found — applying schema directly...");
+    applySchemaDirectly();
+    return;
   }
 
   try {
