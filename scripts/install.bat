@@ -76,7 +76,11 @@ echo [OK] Images built.
 REM ─── Start services ──────────────────────────────────────────────────────────
 echo.
 echo [4/5] Removing any existing containers to avoid name conflicts...
+REM docker compose down only removes containers it labeled; force-remove by name too.
 docker compose down --remove-orphans 2>nul
+for %%c in (eart-redis eart-app eart-worker eart-garak-build eart-pyrit-build eart-deepteam-build eart-ollama) do (
+    docker rm -f %%c 2>nul
+)
 echo [OK] Existing containers removed (if any).
 
 echo Starting services...

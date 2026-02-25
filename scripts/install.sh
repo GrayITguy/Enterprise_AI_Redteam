@@ -107,7 +107,13 @@ build_images() {
 
 start_services() {
   step "Removing any existing containers to avoid name conflicts..."
+  # docker compose down only removes containers it created (those with compose labels).
+  # Force-remove by name to handle containers from prior runs or different projects.
   docker compose down --remove-orphans 2>/dev/null || true
+  local named_containers=(eart-redis eart-app eart-worker eart-garak-build eart-pyrit-build eart-deepteam-build eart-ollama)
+  for c in "${named_containers[@]}"; do
+    docker rm -f "$c" 2>/dev/null || true
+  done
   ok "Existing containers removed"
 
   step "Starting services..."
