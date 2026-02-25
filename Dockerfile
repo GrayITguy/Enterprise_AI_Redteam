@@ -2,7 +2,7 @@
 # Stage 1: Build backend TypeScript
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS backend-builder
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ && ln -sf /usr/bin/python3 /usr/bin/python
 WORKDIR /app
 
 COPY package*.json ./
@@ -30,7 +30,7 @@ RUN npm run build
 # Stage 2.5: Production dependencies (with native module compilation)
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS prod-deps
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ && ln -sf /usr/bin/python3 /usr/bin/python
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
