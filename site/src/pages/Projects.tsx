@@ -47,16 +47,26 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     if (!url) return;
     setOllamaStatus({ checking: true, running: null, models: [], error: undefined });
     try {
-      const resp = await api.get("/ollama/status", { params: { url } });
-      const data = resp.data as { running: boolean; models?: string[]; error?: string };
-      const models = data.models ?? [];
-      setOllamaStatus({ checking: false, running: data.running, models, error: data.error });
+      // Call Ollama directly from the browser — the backend proxy cannot reach
+      // localhost:11434 when EART runs on a different host than Ollama.
+      const base = url.replace(/\/+$/, "");
+      const resp = await fetch(`${base}/api/tags`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!resp.ok) {
+        setOllamaStatus({ checking: false, running: false, models: [], error: `HTTP ${resp.status}` });
+        return;
+      }
+      const data = (await resp.json()) as { models?: Array<{ name: string }> };
+      const models = (data.models ?? []).map((m) => m.name);
+      setOllamaStatus({ checking: false, running: true, models });
       // Auto-select first model when form model is blank
-      if (data.running && models.length > 0 && !form.model) {
+      if (models.length > 0 && !form.model) {
         setForm((f) => ({ ...f, model: models[0] }));
       }
-    } catch {
-      setOllamaStatus({ checking: false, running: false, models: [], error: "Request failed" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setOllamaStatus({ checking: false, running: false, models: [], error: message });
     }
   }
 
