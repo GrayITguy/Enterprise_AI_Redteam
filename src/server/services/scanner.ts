@@ -396,43 +396,13 @@ export class ScanOrchestrator {
       return this.runPromptfooUnavailable(config, onResult);
     }
 
-    // ── Pre-flight connectivity check for Ollama ──────────────────────────────
-    // Promptfoo retries 4 times internally before surfacing the error, which
-    // wastes time and produces a confusing "AggregateError" message.  We probe
-    // the /api/tags endpoint once here so we can fail fast with a clear reason.
+    // ── Ollama: bypass Promptfoo and use the browser relay ────────────────────
+    // Promptfoo's ollama provider calls localhost:11434 directly from the server
+    // process, which fails when EART is hosted remotely.  Instead, we run the
+    // attacks ourselves and route each call through the browser relay so the
+    // browser (on the user's machine) can reach their local Ollama.
     if (config.providerType === "ollama") {
-      const ollamaBase = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
-      try {
-        const probe = await fetch(`${ollamaBase}/api/tags`, {
-          signal: AbortSignal.timeout(5_000),
-        });
-        if (!probe.ok) {
-          throw new Error(`HTTP ${probe.status}`);
-        }
-      } catch (err) {
-        const cause = err instanceof Error ? err.message : String(err);
-        const reason =
-          `Cannot reach Ollama at ${ollamaBase} — verify Ollama is running ` +
-          `and accessible from the server process. ` +
-          `(If EART is hosted remotely, use a publicly accessible URL ` +
-          `such as an ngrok tunnel instead of localhost.) Cause: ${cause}`;
-        logger.error(`[Scanner][promptfoo] ${reason}`);
-        for (const pluginId of config.plugins) {
-          const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId} (provider unreachable)`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: null,
-            response: null,
-            passed: false,
-            evidence: JSON.stringify({ errored: true, reason, pluginId }),
-          });
-        }
-        return;
-      }
+      return this.runOllamaAttacksViaRelay(config, onResult);
     }
 
     const provider = this.buildProvider(config);
@@ -514,6 +484,113 @@ export class ScanOrchestrator {
             response: null,
             passed: false,
             evidence: JSON.stringify({ error: String(err), pluginId }),
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Run all promptfoo plugin attacks for an Ollama target via the browser relay.
+   *
+   * Instead of using Promptfoo's built-in ollama provider (which calls the
+   * server's localhost), we POST each prompt to the relay endpoint on the
+   * backend HTTP server.  The browser picks the request up, calls the user's
+   * local Ollama, and posts the response back.  We then evaluate the response
+   * against the plugin's failPattern ourselves.
+   */
+  private async runOllamaAttacksViaRelay(
+    config: {
+      plugins: string[];
+      targetUrl: string;
+      providerConfig: Record<string, unknown>;
+      model?: string;
+    },
+    onResult: ResultCallback
+  ): Promise<void> {
+    const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+    const model =
+      (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
+    const port = process.env.PORT ?? "3000";
+    const relayForwardUrl = `http://localhost:${port}/api/ollama/relay/forward`;
+
+    logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
+
+    for (const pluginId of config.plugins) {
+      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+      const attacks = PLUGIN_ATTACKS[pfId];
+
+      if (!attacks || attacks.length === 0) {
+        await onResult({
+          tool: "promptfoo",
+          category: pfId,
+          severity: this.getSeverity(pluginId),
+          testName: `[promptfoo] ${pfId}`,
+          owaspCategory: this.getOwasp(pluginId),
+          prompt: `(no attack tests defined for ${pfId})`,
+          response: null,
+          passed: true,
+          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
+        });
+        continue;
+      }
+
+      for (const attack of attacks) {
+        const start = Date.now();
+        try {
+          const relayResp = await fetch(relayForwardUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ollamaUrl,
+              path: "/api/chat",
+              body: {
+                model,
+                messages: [{ role: "user", content: attack.prompt }],
+                stream: false,
+              },
+            }),
+            signal: AbortSignal.timeout(130_000), // relay itself times out at 120 s
+          });
+
+          if (!relayResp.ok) {
+            const errBody = await relayResp.text().catch(() => "");
+            throw new Error(`Relay returned HTTP ${relayResp.status}: ${errBody}`);
+          }
+
+          const data = (await relayResp.json()) as { message?: { content?: string } };
+          const responseText = data.message?.content ?? "";
+          const passed = !attack.failPattern.test(responseText);
+          const latencyMs = Date.now() - start;
+
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: responseText,
+            passed,
+            evidence: JSON.stringify({
+              pluginId,
+              failPattern: attack.failPattern.toString(),
+              latencyMs,
+              relay: true,
+            }),
+          });
+        } catch (err) {
+          logger.error(`[Scanner][ollama-relay] Error for plugin ${pfId}: ${err}`);
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: null,
+            passed: false,
+            evidence: JSON.stringify({ error: String(err), pluginId, relay: true }),
           });
         }
       }

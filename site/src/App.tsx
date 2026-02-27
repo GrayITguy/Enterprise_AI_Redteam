@@ -9,6 +9,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { useAuthStore } from "@/store/authStore";
+import { useOllamaRelay } from "@/hooks/useOllamaRelay";
 
 // Lazy-loaded pages
 const Login = lazy(() => import("@/pages/Login"));
@@ -43,6 +44,11 @@ function PageLoader() {
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   const location = useLocation();
+
+  // Keep the browser relay running whenever the user is authenticated so that
+  // Ollama scans and report generation can route through the browser to the
+  // user's local Ollama instance.
+  useOllamaRelay();
 
   if (!isAuthenticated()) {
     return <Navigate to="/login" state={{ from: location }} replace />;
