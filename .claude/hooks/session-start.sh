@@ -35,6 +35,11 @@ tmux kill-session -t eart-frontend 2>/dev/null || true
 tmux new-session -d -s eart-frontend -c "$CLAUDE_PROJECT_DIR/site" \
   "npm run dev -- --host 0.0.0.0 2>&1 | tee /tmp/frontend.log"
 
+echo "==> Starting scan worker..."
+tmux kill-session -t eart-worker 2>/dev/null || true
+tmux new-session -d -s eart-worker -c "$CLAUDE_PROJECT_DIR" \
+  "npm run dev:worker 2>&1 | tee /tmp/worker.log"
+
 echo "==> Waiting for servers to be ready..."
 for i in $(seq 1 20); do
   if curl -sf http://localhost:3000/api/health >/dev/null 2>&1 && \
