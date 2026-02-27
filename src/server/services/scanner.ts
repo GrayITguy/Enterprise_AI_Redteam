@@ -533,7 +533,7 @@ export class ScanOrchestrator {
       case "ollama":
         return {
           id: `ollama:chat:${m}`,
-          config: { apiBaseUrl: targetUrl || "http://ollama:11434" },
+          config: { apiBaseUrl: targetUrl || "http://localhost:11434" },
         };
 
       case "azure-openai":
