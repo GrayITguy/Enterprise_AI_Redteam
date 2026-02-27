@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, ExternalLink, Server, Globe, Brain, ChevronRight, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, ExternalLink, Server, Globe, Brain, ChevronRight, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 
@@ -36,6 +36,29 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     model: "",
     apiKey: "",
   });
+  const [ollamaStatus, setOllamaStatus] = useState<{
+    checking: boolean;
+    running: boolean | null;
+    models: string[];
+    error?: string;
+  }>({ checking: false, running: null, models: [] });
+
+  async function checkOllama(url: string) {
+    if (!url) return;
+    setOllamaStatus({ checking: true, running: null, models: [], error: undefined });
+    try {
+      const resp = await api.get("/ollama/status", { params: { url } });
+      const data = resp.data as { running: boolean; models?: string[]; error?: string };
+      const models = data.models ?? [];
+      setOllamaStatus({ checking: false, running: data.running, models, error: data.error });
+      // Auto-select first model when form model is blank
+      if (data.running && models.length > 0 && !form.model) {
+        setForm((f) => ({ ...f, model: models[0] }));
+      }
+    } catch {
+      setOllamaStatus({ checking: false, running: false, models: [], error: "Request failed" });
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -64,6 +87,8 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     custom: "http://localhost:4000",
   };
 
+  const isOllama = form.providerType === "ollama";
+
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }}
@@ -83,7 +108,10 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
           <Label>Provider</Label>
           <Select
             value={form.providerType}
-            onValueChange={(v) => setForm((f) => ({ ...f, providerType: v as typeof f.providerType }))}
+            onValueChange={(v) => {
+              setForm((f) => ({ ...f, providerType: v as typeof f.providerType, model: "", targetUrl: "" }));
+              setOllamaStatus({ checking: false, running: null, models: [], error: undefined });
+            }}
           >
             <SelectTrigger>
               <SelectValue />
@@ -99,30 +127,82 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="space-y-2">
         <Label>Target URL *</Label>
-        <Input
-          placeholder={placeholders[form.providerType]}
-          value={form.targetUrl}
-          onChange={(e) => setForm((f) => ({ ...f, targetUrl: e.target.value }))}
-          required
-          type="url"
-        />
-        <p className="text-xs text-muted-foreground">
-          {form.providerType === "ollama"
-            ? "Ollama base URL — model selected during scan"
-            : "OpenAI-compatible base URL"}
-        </p>
+        <div className="flex gap-2">
+          <Input
+            placeholder={placeholders[form.providerType]}
+            value={form.targetUrl}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, targetUrl: e.target.value }));
+              if (isOllama) setOllamaStatus({ checking: false, running: null, models: [], error: undefined });
+            }}
+            onBlur={() => {
+              if (isOllama && form.targetUrl) checkOllama(form.targetUrl);
+            }}
+            required
+            type="url"
+          />
+          {isOllama && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={!form.targetUrl || ollamaStatus.checking}
+              onClick={() => checkOllama(form.targetUrl)}
+            >
+              {ollamaStatus.checking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Check"
+              )}
+            </Button>
+          )}
+        </div>
+        {isOllama && ollamaStatus.running === true && (
+          <p className="flex items-center gap-1.5 text-xs text-green-600">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Connected — {ollamaStatus.models.length} model{ollamaStatus.models.length !== 1 ? "s" : ""} available
+          </p>
+        )}
+        {isOllama && ollamaStatus.running === false && (
+          <p className="flex items-center gap-1.5 text-xs text-destructive">
+            <XCircle className="h-3.5 w-3.5" />
+            Unreachable{ollamaStatus.error ? `: ${ollamaStatus.error}` : ""}
+          </p>
+        )}
+        {!isOllama && (
+          <p className="text-xs text-muted-foreground">OpenAI-compatible base URL</p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Model (optional)</Label>
-          <Input
-            placeholder={form.providerType === "ollama" ? "llama3" : "gpt-4o"}
-            value={form.model}
-            onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-          />
+          <Label>
+            Model{isOllama ? "" : " (optional)"}
+          </Label>
+          {isOllama && ollamaStatus.models.length > 0 ? (
+            <Select
+              value={form.model}
+              onValueChange={(v) => setForm((f) => ({ ...f, model: v }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {ollamaStatus.models.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              placeholder={isOllama ? "e.g. qwen3:4b, llama3" : "gpt-4o"}
+              value={form.model}
+              onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+            />
+          )}
         </div>
-        {form.providerType !== "ollama" && (
+        {!isOllama && (
           <div className="space-y-2">
             <Label>API Key</Label>
             <Input
