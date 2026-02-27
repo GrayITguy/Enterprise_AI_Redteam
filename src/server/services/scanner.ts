@@ -396,6 +396,45 @@ export class ScanOrchestrator {
       return this.runPromptfooUnavailable(config, onResult);
     }
 
+    // ── Pre-flight connectivity check for Ollama ──────────────────────────────
+    // Promptfoo retries 4 times internally before surfacing the error, which
+    // wastes time and produces a confusing "AggregateError" message.  We probe
+    // the /api/tags endpoint once here so we can fail fast with a clear reason.
+    if (config.providerType === "ollama") {
+      const ollamaBase = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      try {
+        const probe = await fetch(`${ollamaBase}/api/tags`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!probe.ok) {
+          throw new Error(`HTTP ${probe.status}`);
+        }
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err);
+        const reason =
+          `Cannot reach Ollama at ${ollamaBase} — verify Ollama is running ` +
+          `and accessible from the server process. ` +
+          `(If EART is hosted remotely, use a publicly accessible URL ` +
+          `such as an ngrok tunnel instead of localhost.) Cause: ${cause}`;
+        logger.error(`[Scanner][promptfoo] ${reason}`);
+        for (const pluginId of config.plugins) {
+          const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId} (provider unreachable)`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: null,
+            response: null,
+            passed: false,
+            evidence: JSON.stringify({ errored: true, reason, pluginId }),
+          });
+        }
+        return;
+      }
+    }
+
     const provider = this.buildProvider(config);
 
     for (const pluginId of config.plugins) {
