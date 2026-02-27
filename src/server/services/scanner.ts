@@ -538,27 +538,47 @@ export class ScanOrchestrator {
       for (const attack of attacks) {
         const start = Date.now();
         try {
-          const relayResp = await fetch(relayForwardUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ollamaUrl,
-              path: "/api/chat",
-              body: {
-                model,
-                messages: [{ role: "user", content: attack.prompt }],
-                stream: false,
-              },
-            }),
-            signal: AbortSignal.timeout(130_000), // relay itself times out at 120 s
-          });
-
-          if (!relayResp.ok) {
-            const errBody = await relayResp.text().catch(() => "");
-            throw new Error(`Relay returned HTTP ${relayResp.status}: ${errBody}`);
+          // Retry the relay HTTP call up to 3 times with exponential back-off.
+          // The backend may briefly be unavailable during a tsx-watch hot-reload.
+          const RELAY_RETRY_DELAYS = [2_000, 4_000, 8_000];
+          let relayResp: Response | undefined;
+          for (let attempt = 0; attempt <= RELAY_RETRY_DELAYS.length; attempt++) {
+            try {
+              relayResp = await fetch(relayForwardUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  ollamaUrl,
+                  path: "/api/chat",
+                  body: {
+                    model,
+                    messages: [{ role: "user", content: attack.prompt }],
+                    stream: false,
+                  },
+                }),
+                signal: AbortSignal.timeout(130_000), // relay itself times out at 120 s
+              });
+              break; // success
+            } catch (fetchErr) {
+              if (attempt < RELAY_RETRY_DELAYS.length) {
+                const delay = RELAY_RETRY_DELAYS[attempt]!;
+                logger.warn(
+                  `[Scanner][ollama-relay] Relay unreachable (attempt ${attempt + 1}), ` +
+                    `retrying in ${delay}ms… Is 'npm run dev:worker' running alongside the backend?`
+                );
+                await new Promise<void>((r) => setTimeout(r, delay));
+              } else {
+                throw fetchErr;
+              }
+            }
           }
 
-          const data = (await relayResp.json()) as { message?: { content?: string } };
+          if (!relayResp!.ok) {
+            const errBody = await relayResp!.text().catch(() => "");
+            throw new Error(`Relay returned HTTP ${relayResp!.status}: ${errBody}`);
+          }
+
+          const data = (await relayResp!.json()) as { message?: { content?: string } };
           const responseText = data.message?.content ?? "";
           const passed = !attack.failPattern.test(responseText);
           const latencyMs = Date.now() - start;

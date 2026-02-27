@@ -53,9 +53,12 @@ export function useOllamaRelay(): void {
 
           // Forward to the user's local Ollama and post the result back.
           try {
+            // Intentionally omit Content-Type so the browser sends text/plain
+            // (a "simple" CORS request — no preflight OPTIONS sent).
+            // Ollama's Go handler decodes JSON from the body regardless of
+            // Content-Type, so the request is still processed correctly.
             const r = await fetch(`${ollamaUrl}${path}`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
             });
 
