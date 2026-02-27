@@ -79,18 +79,33 @@ async function callProjectProvider(
   switch (providerType) {
     case "ollama": {
       const url = (targetUrl || "http://localhost:11434").replace(/\/+$/, "");
-      const resp = await fetch(`${url}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: prompt }],
-          stream: false,
-        }),
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!resp.ok) throw new Error(`Ollama returned ${resp.status}`);
-      const data = (await resp.json()) as { message?: { content?: string } };
+      const ollamaBody = {
+        model,
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      };
+
+      // Try direct connection first — works when Ollama and EART are on the same host.
+      try {
+        const resp = await fetch(`${url}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(ollamaBody),
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (resp.ok) {
+          const data = (await resp.json()) as { message?: { content?: string } };
+          return data.message?.content ?? null;
+        }
+      } catch {
+        // Fall through to browser relay.
+      }
+
+      // Browser relay fallback — browser on user's machine calls local Ollama.
+      const { queueRelayRequest } = await import("../services/ollamaRelay.js");
+      const data = (await queueRelayRequest(url, "/api/chat", ollamaBody)) as {
+        message?: { content?: string };
+      };
       return data.message?.content ?? null;
     }
 
