@@ -15,10 +15,16 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
   - **ScanBuilder pre-flight check** — auto-fires connectivity test when a project is selected; shows green/amber/red status with latency and model count
   - **Projects page dual-check** — now shows both browser and server connectivity status when testing Ollama connections
   - **Direct Ollama scan path** — Promptfoo attacks now call Ollama directly from the server when reachable, falling back to the browser relay only for truly remote deployments (eliminates "keep browser tab open" requirement)
+- **Docker-aware URL resolution** (`src/server/utils/resolveEndpoint.ts`) — auto-detects Docker environment via `/.dockerenv` and rewrites `localhost`/`127.0.0.1` URLs to `host.docker.internal` so containers can reach host services. Zero-impact passthrough when running natively.
+- **`OLLAMA_URL` env var** — optional override for Ollama endpoint in Docker deployments (`.env.example` documented)
+- **`EART_APP_URL` env var** — set in docker-compose for the worker container (`http://app:3000`) so the relay forward path uses Docker-internal DNS instead of unreachable `localhost:3000`
 
 ### Fixed
 - **Critical: camelCase/snake_case config mismatch** — `dockerRunner.ts` sent `targetUrl` (camelCase) but all three Python workers (Garak, PyRIT, DeepTeam) read `target_url` (snake_case), causing every Docker-based scan to receive empty config fields. Added `toSnakeConfig()` key transformation before serialization.
 - **Docker cross-platform networking** — replaced `--network=host` (Linux-only, security risk) with `--add-host=host.docker.internal:host-gateway` which works on Linux, macOS, and Windows Docker Desktop. Localhost URLs are automatically rewritten to `host.docker.internal:{gatewayPort}` for Docker containers.
+- **Docker container → host Ollama networking** — `probeOllama()`, direct Ollama attacks, and the endpoint gateway proxy all now resolve `localhost` to `host.docker.internal` when running inside Docker, fixing `"TypeError: fetch failed"` errors.
+- **Worker → app relay networking** — relay forward URL (`http://localhost:3000/api/ollama/relay/forward`) now uses `EART_APP_URL` (Docker-internal DNS `http://app:3000`) when the worker runs as a separate container, fixing relay connection failures.
+- **`docker-compose.yml`** — added `extra_hosts: ["host.docker.internal:host-gateway"]` to both `app` and `worker` services for Linux host resolution support.
 
 ---
 

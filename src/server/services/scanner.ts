@@ -6,6 +6,7 @@ import { resolvePlugins, type PluginTool } from "../config/pluginCatalog.js";
 import { DockerRunner } from "./dockerRunner.js";
 import { gateway } from "./endpointGateway.js";
 import { logger } from "../utils/logger.js";
+import { resolveForHost } from "../utils/resolveEndpoint.js";
 
 /** Check whether a URL points to the local machine. */
 function isLocalhostUrl(url: string): boolean {
@@ -437,7 +438,7 @@ export class ScanOrchestrator {
     // When running on the same machine as Ollama, call it directly (fastest).
     // When hosted remotely, the browser relay forwards via the user's browser.
     if (config.providerType === "ollama") {
-      const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const ollamaUrl = (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
       const directReachable = await this.probeOllama(ollamaUrl);
 
       if (directReachable) {
@@ -536,8 +537,10 @@ export class ScanOrchestrator {
 
   /** Quick connectivity probe — returns true if Ollama responds within 5 s. */
   private async probeOllama(ollamaUrl: string): Promise<boolean> {
+    // In Docker, localhost won't reach the host — resolve to host.docker.internal
+    const resolved = resolveForHost(ollamaUrl);
     try {
-      const resp = await fetch(`${ollamaUrl}/api/tags`, {
+      const resp = await fetch(`${resolved}/api/tags`, {
         signal: AbortSignal.timeout(5_000),
       });
       return resp.ok;
@@ -559,7 +562,10 @@ export class ScanOrchestrator {
     },
     onResult: ResultCallback
   ): Promise<void> {
-    const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+    // Resolve URL: env override → project target → default, then rewrite for Docker
+    const ollamaUrl = resolveForHost(
+      (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "")
+    );
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
 
@@ -659,11 +665,16 @@ export class ScanOrchestrator {
     },
     onResult: ResultCallback
   ): Promise<void> {
-    const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+    const ollamaUrl = resolveForHost(
+      (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "")
+    );
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
     const port = process.env.PORT ?? "3000";
-    const relayForwardUrl = `http://localhost:${port}/api/ollama/relay/forward`;
+    // EART_APP_URL is set in docker-compose for the worker container (http://app:3000);
+    // falls back to resolveForHost which rewrites localhost → host.docker.internal in Docker
+    const appUrl = process.env.EART_APP_URL ?? resolveForHost(`http://localhost:${port}`);
+    const relayForwardUrl = `${appUrl}/api/ollama/relay/forward`;
 
     logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
 
@@ -820,7 +831,11 @@ export class ScanOrchestrator {
       case "ollama":
         return {
           id: `ollama:chat:${m}`,
-          config: { apiBaseUrl: targetUrl || "http://localhost:11434" },
+          config: {
+            apiBaseUrl: resolveForHost(
+              process.env.OLLAMA_URL || targetUrl || "http://localhost:11434"
+            ),
+          },
         };
 
       case "azure-openai":

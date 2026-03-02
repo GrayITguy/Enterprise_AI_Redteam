@@ -33,6 +33,12 @@ vi.mock("../server/services/endpointGateway.js", () => ({
   },
 }));
 
+// Mock Docker detection — tests run outside Docker, so passthrough all URLs
+vi.mock("../server/utils/resolveEndpoint.js", () => ({
+  isRunningInDocker: vi.fn().mockReturnValue(false),
+  resolveForHost: vi.fn().mockImplementation((url: string) => url),
+}));
+
 // Mock promptfoo to avoid real AI calls
 vi.mock("promptfoo", () => ({
   evaluate: vi.fn().mockResolvedValue({ results: [] }),

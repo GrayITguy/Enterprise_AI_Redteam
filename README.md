@@ -268,6 +268,8 @@ enterpriseairedteam/
 | `SMTP_PASS` | — | SMTP password |
 | `SMTP_FROM` | — | From address for notification emails |
 | `CORS_ORIGIN` | `*` | Allowed CORS origin(s) |
+| `OLLAMA_URL` | — | Override Ollama endpoint for Docker deployments (auto-detected when unset) |
+| `EART_APP_URL` | — | Internal URL for worker→app communication (set automatically in docker-compose) |
 
 ---
 
