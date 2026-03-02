@@ -186,3 +186,117 @@ settingsRouter.put(
     res.json({ message: "Remediation settings saved" });
   }
 );
+
+// ─── Model Enumeration ──────────────────────────────────────────────────────
+
+/**
+ * POST /api/settings/models — list available models for a given provider.
+ * Works for Ollama (/api/tags) and OpenAI-compatible (/v1/models) endpoints.
+ * Admin only (since it uses potentially-saved API keys).
+ */
+settingsRouter.post(
+  "/models",
+  requireRole("admin"),
+  async (req: AuthenticatedRequest, res) => {
+    const schema = z.object({
+      providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),
+      endpoint: z.string().optional(),
+      apiKey: z.string().optional(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    const { providerType, endpoint, apiKey } = parsed.data;
+
+    // If no apiKey provided, try to use the saved one from settings
+    let effectiveApiKey = apiKey;
+    if (!effectiveApiKey) {
+      const savedConfig = await getSetting("remediation.providerConfig");
+      if (savedConfig) {
+        try {
+          const cfg = JSON.parse(savedConfig);
+          if (cfg.apiKey) effectiveApiKey = cfg.apiKey;
+        } catch { /* ignore */ }
+      }
+    }
+
+    try {
+      if (providerType === "ollama") {
+        const base = (endpoint || "http://localhost:11434").replace(/\/+$/, "");
+        const resp = await fetch(`${base}/api/tags`, {
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!resp.ok) {
+          return res.status(502).json({
+            error: `Ollama returned HTTP ${resp.status}`,
+            models: [],
+          });
+        }
+        const data = (await resp.json()) as {
+          models?: Array<{ name: string; size?: number; modified_at?: string }>;
+        };
+        const models = (data.models ?? []).map((m) => ({
+          id: m.name,
+          name: m.name,
+        }));
+        return res.json({ models });
+      }
+
+      if (providerType === "openai" || providerType === "custom") {
+        const base = (
+          endpoint || "https://api.openai.com"
+        ).replace(/\/+$/, "");
+        if (!effectiveApiKey && providerType === "openai") {
+          return res
+            .status(400)
+            .json({ error: "API key required for OpenAI", models: [] });
+        }
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+        if (effectiveApiKey) {
+          headers["Authorization"] = `Bearer ${effectiveApiKey}`;
+        }
+        const resp = await fetch(`${base}/v1/models`, {
+          headers,
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (!resp.ok) {
+          return res.status(502).json({
+            error: `Models endpoint returned HTTP ${resp.status}`,
+            models: [],
+          });
+        }
+        const data = (await resp.json()) as {
+          data?: Array<{ id: string; owned_by?: string }>;
+        };
+        const models = (data.data ?? []).map((m) => ({
+          id: m.id,
+          name: m.id,
+        }));
+        return res.json({ models });
+      }
+
+      if (providerType === "anthropic") {
+        // Anthropic doesn't have a public model listing endpoint;
+        // return the well-known models instead.
+        return res.json({
+          models: [
+            { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+            { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+            { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
+          ],
+        });
+      }
+
+      return res.json({ models: [] });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.debug(`[Settings] Model enumeration failed: ${msg}`);
+      return res.status(502).json({ error: msg, models: [] });
+    }
+  }
+);

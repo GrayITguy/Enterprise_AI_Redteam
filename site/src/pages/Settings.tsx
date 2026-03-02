@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import {
   Users, Copy, CheckCircle, Plus, Mail, Send, Sparkles,
-  Save, AlertCircle, Info,
+  Save, AlertCircle, Info, RefreshCw, Wifi, WifiOff,
 } from "lucide-react";
 import { useState, useRef, useCallback, useEffect } from "react";
 
@@ -369,6 +369,15 @@ function RemediationSettings() {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
+  // Model autodetection state
+  const [detectedModels, setDetectedModels] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [modelStatus, setModelStatus] = useState<{
+    checking: boolean;
+    error?: string;
+  }>({ checking: false });
+
   const { data, isLoading } = useQuery({
     queryKey: ["settings-remediation"],
     queryFn: () => api.get("/settings/remediation").then((r) => r.data),
@@ -383,6 +392,61 @@ function RemediationSettings() {
       setHasApiKey(data.providerConfig?.hasApiKey ?? false);
     }
   }, [data]);
+
+  // Auto-detect models when endpoint or provider changes
+  const fetchModels = useCallback(
+    async (pt: string, ep: string, key?: string) => {
+      if (pt === "project") return;
+      // Ollama/custom need an endpoint; OpenAI/Anthropic can work without one
+      if ((pt === "ollama" || pt === "custom") && !ep) return;
+
+      setModelStatus({ checking: true });
+      setDetectedModels([]);
+      try {
+        const resp = await api.post("/settings/models", {
+          providerType: pt,
+          endpoint: ep || undefined,
+          apiKey: key || undefined,
+        });
+        const models = resp.data.models as Array<{ id: string; name: string }>;
+        setDetectedModels(models);
+        setModelStatus({ checking: false });
+        // Auto-select first model if none selected
+        if (models.length > 0 && !model) {
+          setModel(models[0].id);
+        }
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.error ?? "Could not detect models";
+        setModelStatus({ checking: false, error: msg });
+      }
+    },
+    [model]
+  );
+
+  // Debounced auto-detect for Ollama/custom on endpoint change
+  useEffect(() => {
+    if (providerType !== "ollama" && providerType !== "custom") return;
+    if (!endpoint) {
+      setDetectedModels([]);
+      return;
+    }
+    const timer = setTimeout(() => fetchModels(providerType, endpoint, apiKey), 800);
+    return () => clearTimeout(timer);
+  }, [endpoint, providerType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-detect for Anthropic (static list, fires immediately)
+  useEffect(() => {
+    if (providerType === "anthropic") {
+      fetchModels("anthropic", "", "");
+    }
+  }, [providerType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset detected models when provider type changes
+  useEffect(() => {
+    setDetectedModels([]);
+    setModelStatus({ checking: false });
+  }, [providerType]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -451,7 +515,13 @@ function RemediationSettings() {
           <>
             <div className="space-y-2">
               <Label>Remediation Provider</Label>
-              <Select value={providerType} onValueChange={setProviderType}>
+              <Select
+                value={providerType}
+                onValueChange={(v) => {
+                  setProviderType(v);
+                  setModel("");
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -475,7 +545,7 @@ function RemediationSettings() {
                       placeholder={
                         providerType === "ollama"
                           ? "http://localhost:11434"
-                          : "https://api.example.com/v1/chat/completions"
+                          : "https://api.example.com/v1"
                       }
                       value={endpoint}
                       onChange={(e) => setEndpoint(e.target.value)}
@@ -496,14 +566,66 @@ function RemediationSettings() {
                   </div>
                 )}
 
+                {/* Model selector: dropdown when models detected, text input as fallback */}
                 <div className="space-y-2">
-                  <Label htmlFor="rem-model">Model</Label>
-                  <Input
-                    id="rem-model"
-                    placeholder={defaultModel}
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="rem-model">Model</Label>
+                    <div className="flex items-center gap-2">
+                      {modelStatus.checking && (
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                          Detecting...
+                        </span>
+                      )}
+                      {!modelStatus.checking && detectedModels.length > 0 && (
+                        <span className="flex items-center gap-1.5 text-xs text-green-500">
+                          <Wifi className="h-3 w-3" />
+                          {detectedModels.length} model{detectedModels.length !== 1 ? "s" : ""} found
+                        </span>
+                      )}
+                      {!modelStatus.checking && modelStatus.error && (
+                        <span className="flex items-center gap-1.5 text-xs text-destructive">
+                          <WifiOff className="h-3 w-3" />
+                          {modelStatus.error}
+                        </span>
+                      )}
+                      {providerType !== "anthropic" && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => fetchModels(providerType, endpoint, apiKey)}
+                          disabled={modelStatus.checking}
+                        >
+                          <RefreshCw className={`h-3 w-3 mr-1 ${modelStatus.checking ? "animate-spin" : ""}`} />
+                          Detect
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {detectedModels.length > 0 ? (
+                    <Select value={model} onValueChange={setModel}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {detectedModels.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="rem-model"
+                      placeholder={defaultModel}
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                    />
+                  )}
                 </div>
               </div>
             )}

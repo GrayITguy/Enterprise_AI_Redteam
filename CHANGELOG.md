@@ -12,7 +12,8 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Settings page: SMTP configuration** — admins can configure SMTP (host, port, TLS, credentials, from address) directly from the web UI instead of editing `.env` files. Includes "Send Test Email" button. DB settings take precedence over env vars; env vars remain as fallback.
 - **Settings page: AI Remediation provider** — admins can set a default AI provider (Ollama, OpenAI, Anthropic, or custom endpoint) for remediation plan generation across all projects, with per-project override option. Includes enable/disable toggle.
 - **`appSettings` database table** — key-value platform configuration store with AES-256-CBC encryption for sensitive values (API keys, SMTP passwords).
-- **Settings API** — `GET/PUT /api/settings/smtp`, `POST /api/settings/smtp/test`, `GET/PUT /api/settings/remediation` endpoints with admin role enforcement.
+- **Settings API** — `GET/PUT /api/settings/smtp`, `POST /api/settings/smtp/test`, `GET/PUT /api/settings/remediation`, `POST /api/settings/models` endpoints with admin role enforcement.
+- **Model auto-detection in Remediation settings** — Ollama and OpenAI-compatible endpoints are probed automatically when the admin enters an endpoint URL (or API key for OpenAI). Detected models populate a dropdown selector instead of a manual text input. Anthropic shows its well-known model list. A manual "Detect" button is also available.
 - **Remediation enabled guard** — Remediation page shows a disabled banner when an admin has turned off AI remediation.
 
 ### Fixed
