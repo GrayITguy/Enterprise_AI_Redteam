@@ -219,6 +219,24 @@ const PLUGIN_DISPLAY: Record<string, string> = {
   "promptfoo:sql-injection": "sql-injection",
 };
 
+// ─── Estimate total tests before scanning begins ─────────────────────────────
+/** Count the expected number of individual test results for a set of plugins. */
+function estimateTotalTests(pluginIds: string[]): number {
+  let total = 0;
+  for (const pluginId of pluginIds) {
+    if (pluginId.startsWith("promptfoo:")) {
+      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+      const attacks = PLUGIN_ATTACKS[pfId];
+      // Each attack produces exactly 1 result; plugins with no attacks get 1 synthetic result
+      total += attacks ? attacks.length : 1;
+    } else {
+      // Docker workers (garak, pyrit, deepteam): conservative estimate of 1 per plugin
+      total += 1;
+    }
+  }
+  return total;
+}
+
 // ─── Result row type ──────────────────────────────────────────────────────────
 type ResultCallback = (r: {
   tool: "promptfoo" | "garak" | "pyrit" | "deepteam";
@@ -273,9 +291,17 @@ export class ScanOrchestrator {
       const providerConfig = JSON.parse(project.providerConfig) as Record<string, unknown>;
 
       let completedTools = 0;
-      let totalTests = 0;
       let passedTests = 0;
       let failedTests = 0;
+
+      // Pre-calculate expected test count so the progress bar works correctly
+      const totalExpected = estimateTotalTests(pluginIds);
+      if (totalExpected > 0) {
+        await db
+          .update(scans)
+          .set({ totalTests: totalExpected })
+          .where(eq(scans.id, scanId));
+      }
 
       // ── Endpoint Auto-Bridge: start gateway for localhost targets ────────
       const isLocal = isLocalhostUrl(project.targetUrl);
@@ -311,12 +337,25 @@ export class ScanOrchestrator {
           evidence: r.evidence,
           createdAt: new Date(),
         });
-        totalTests++;
         if (r.passed) passedTests++;
         else failedTests++;
+
+        // If Docker workers produce more results than estimated, grow total upward
+        const completedCount = passedTests + failedTests;
+        const effectiveTotal = Math.max(totalExpected, completedCount);
+        const pct = Math.min(
+          Math.round((completedCount / effectiveTotal) * 100),
+          99 // Cap at 99% until scan is fully complete
+        );
+
         await db
           .update(scans)
-          .set({ totalTests, passedTests, failedTests })
+          .set({
+            totalTests: effectiveTotal,
+            passedTests,
+            failedTests,
+            progress: pct,
+          })
           .where(eq(scans.id, scanId));
       };
 
@@ -386,13 +425,21 @@ export class ScanOrchestrator {
         }
       }
 
+      const finalTotal = passedTests + failedTests;
       await db
         .update(scans)
-        .set({ status: "completed", completedAt: new Date(), totalTests, passedTests, failedTests })
+        .set({
+          status: "completed",
+          completedAt: new Date(),
+          totalTests: finalTotal,
+          passedTests,
+          failedTests,
+          progress: 100,
+        })
         .where(eq(scans.id, scanId));
 
       logger.info(
-        `[Scanner] Scan ${scanId} completed — ${totalTests} tests, ${failedTests} findings`
+        `[Scanner] Scan ${scanId} completed — ${finalTotal} tests, ${failedTests} findings`
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

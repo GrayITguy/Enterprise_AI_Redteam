@@ -5,11 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Users, Copy, CheckCircle, Plus } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Users, Copy, CheckCircle, Plus, Mail, Send, Sparkles,
+  Save, AlertCircle, Info,
+} from "lucide-react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 export default function Settings() {
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
 
@@ -108,6 +122,12 @@ export default function Settings() {
         </Card>
       )}
 
+      {/* SMTP Settings (admin only) */}
+      {user?.role === "admin" && <SmtpSettings />}
+
+      {/* Remediation Settings (admin only) */}
+      {user?.role === "admin" && <RemediationSettings />}
+
       {/* About */}
       <Card>
         <CardHeader>
@@ -129,5 +149,381 @@ export default function Settings() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── SMTP Settings Card ─────────────────────────────────────────────────────
+
+function SmtpSettings() {
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("587");
+  const [secure, setSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [password, setPassword] = useState("");
+  const [fromAddr, setFromAddr] = useState("");
+  const [hasPassword, setHasPassword] = useState(false);
+  const [envConfigured, setEnvConfigured] = useState(false);
+
+  const [testEmail, setTestEmail] = useState("");
+  const [showTestInput, setShowTestInput] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["settings-smtp"],
+    queryFn: () => api.get("/settings/smtp").then((r) => r.data),
+  });
+
+  useEffect(() => {
+    if (data) {
+      setHost(data.host ?? "");
+      setPort(data.port ?? "587");
+      setSecure(data.secure ?? false);
+      setSmtpUser(data.user ?? "");
+      setHasPassword(data.hasPassword ?? false);
+      setFromAddr(data.from ?? "");
+      setEnvConfigured(data.envConfigured ?? false);
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.put("/settings/smtp", {
+        host,
+        port,
+        secure,
+        user: smtpUser,
+        ...(password ? { password } : {}),
+        from: fromAddr,
+      }),
+    onSuccess: () => {
+      setSaveMsg("SMTP settings saved");
+      setHasPassword(!!password || hasPassword);
+      setPassword("");
+      setTimeout(() => setSaveMsg(null), 3000);
+    },
+    onError: (err: any) => {
+      setSaveMsg(err?.response?.data?.error ?? "Failed to save");
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: () => api.post("/settings/smtp/test", { toEmail: testEmail }),
+    onSuccess: () => setTestMsg({ ok: true, text: "Test email sent!" }),
+    onError: (err: any) =>
+      setTestMsg({
+        ok: false,
+        text: err?.response?.data?.error ?? "Failed to send",
+      }),
+  });
+
+  if (isLoading) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Mail className="h-4 w-4" />
+          SMTP / Email Notifications
+        </CardTitle>
+        <CardDescription>
+          Configure outgoing email for scan completion notifications.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {envConfigured && !host && (
+          <div className="flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-xs text-muted-foreground">
+            <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+            <span>
+              SMTP is currently configured via environment variables. Settings saved here will take
+              precedence.
+            </span>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="smtp-host">SMTP Host</Label>
+            <Input
+              id="smtp-host"
+              placeholder="smtp.example.com"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="smtp-port">Port</Label>
+            <Input
+              id="smtp-port"
+              placeholder="587"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Switch
+            id="smtp-secure"
+            checked={secure}
+            onCheckedChange={setSecure}
+          />
+          <Label htmlFor="smtp-secure" className="text-sm">
+            Use TLS/SSL (secure connection)
+          </Label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="smtp-user">Username</Label>
+            <Input
+              id="smtp-user"
+              placeholder="user@example.com"
+              value={smtpUser}
+              onChange={(e) => setSmtpUser(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="smtp-pass">Password</Label>
+            <Input
+              id="smtp-pass"
+              type="password"
+              placeholder={hasPassword ? "(saved)" : ""}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="smtp-from">From Address</Label>
+          <Input
+            id="smtp-from"
+            type="email"
+            placeholder="no-reply@example.com"
+            value={fromAddr}
+            onChange={(e) => setFromAddr(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !host || !fromAddr}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {saveMutation.isPending ? "Saving..." : "Save"}
+          </Button>
+
+          {!showTestInput ? (
+            <Button
+              variant="outline"
+              onClick={() => setShowTestInput(true)}
+              disabled={!host}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Send Test Email
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Input
+                type="email"
+                placeholder="recipient@example.com"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="w-56"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => testMutation.mutate()}
+                disabled={testMutation.isPending || !testEmail}
+              >
+                {testMutation.isPending ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {saveMsg && (
+          <p className="text-sm text-green-500">{saveMsg}</p>
+        )}
+        {testMsg && (
+          <p className={`text-sm ${testMsg.ok ? "text-green-500" : "text-destructive"}`}>
+            {testMsg.text}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Remediation AI Settings Card ───────────────────────────────────────────
+
+function RemediationSettings() {
+  const [enabled, setEnabled] = useState(true);
+  const [providerType, setProviderType] = useState("project");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("");
+  const [endpoint, setEndpoint] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["settings-remediation"],
+    queryFn: () => api.get("/settings/remediation").then((r) => r.data),
+  });
+
+  useEffect(() => {
+    if (data) {
+      setEnabled(data.enabled ?? true);
+      setProviderType(data.providerType ?? "project");
+      setModel(data.providerConfig?.model ?? "");
+      setEndpoint(data.providerConfig?.endpoint ?? "");
+      setHasApiKey(data.providerConfig?.hasApiKey ?? false);
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.put("/settings/remediation", {
+        enabled,
+        providerType,
+        providerConfig: providerType !== "project"
+          ? {
+              ...(apiKey ? { apiKey } : {}),
+              ...(model ? { model } : {}),
+              ...(endpoint ? { endpoint } : {}),
+            }
+          : undefined,
+      }),
+    onSuccess: () => {
+      setSaveMsg("Remediation settings saved");
+      if (apiKey) setHasApiKey(true);
+      setApiKey("");
+      setTimeout(() => setSaveMsg(null), 3000);
+    },
+    onError: (err: any) => {
+      setSaveMsg(err?.response?.data?.error ?? "Failed to save");
+    },
+  });
+
+  if (isLoading) return null;
+
+  const showProviderFields = providerType !== "project";
+  const showApiKey = ["openai", "anthropic", "custom"].includes(providerType);
+  const showEndpoint = ["ollama", "custom"].includes(providerType);
+
+  const defaultModel =
+    providerType === "anthropic"
+      ? "claude-haiku-4-5-20251001"
+      : providerType === "openai"
+        ? "gpt-4o-mini"
+        : providerType === "ollama"
+          ? "llama3"
+          : "";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Sparkles className="h-4 w-4" />
+          AI Remediation
+        </CardTitle>
+        <CardDescription>
+          Configure the AI provider used for generating remediation plans. By default, each
+          project's own LLM provider is used.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Switch
+            id="rem-enabled"
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
+          <Label htmlFor="rem-enabled" className="text-sm">
+            Enable AI Remediation
+          </Label>
+        </div>
+
+        {enabled && (
+          <>
+            <div className="space-y-2">
+              <Label>Remediation Provider</Label>
+              <Select value={providerType} onValueChange={setProviderType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="project">Use Project's Provider (default)</SelectItem>
+                  <SelectItem value="ollama">Ollama</SelectItem>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="anthropic">Anthropic</SelectItem>
+                  <SelectItem value="custom">Custom (OpenAI-compatible)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {showProviderFields && (
+              <div className="space-y-4 rounded-md border p-4">
+                {showEndpoint && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rem-endpoint">Endpoint URL</Label>
+                    <Input
+                      id="rem-endpoint"
+                      placeholder={
+                        providerType === "ollama"
+                          ? "http://localhost:11434"
+                          : "https://api.example.com/v1/chat/completions"
+                      }
+                      value={endpoint}
+                      onChange={(e) => setEndpoint(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {showApiKey && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rem-apikey">API Key</Label>
+                    <Input
+                      id="rem-apikey"
+                      type="password"
+                      placeholder={hasApiKey ? "(saved)" : "sk-..."}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="rem-model">Model</Label>
+                  <Input
+                    id="rem-model"
+                    placeholder={defaultModel}
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {saveMutation.isPending ? "Saving..." : "Save"}
+          </Button>
+        </div>
+
+        {saveMsg && (
+          <p className="text-sm text-green-500">{saveMsg}</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

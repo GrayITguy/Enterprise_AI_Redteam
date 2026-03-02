@@ -240,6 +240,14 @@ export default function Remediation() {
     queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as any),
   });
 
+  const { data: remSettings } = useQuery({
+    queryKey: ["settings-remediation"],
+    queryFn: () =>
+      api.get("/settings/remediation").then((r) => r.data as { enabled: boolean }),
+  });
+
+  const remediationDisabled = remSettings?.enabled === false;
+
   const generateMutation = useMutation({
     mutationFn: () =>
       api
@@ -295,8 +303,22 @@ export default function Remediation() {
         </div>
       </div>
 
+      {/* Disabled banner */}
+      {remediationDisabled && (
+        <Card className="border-amber-500/30">
+          <CardContent className="py-8 flex flex-col items-center gap-3 text-center">
+            <AlertCircle className="h-8 w-8 text-amber-500" />
+            <h3 className="text-lg font-semibold">AI Remediation Disabled</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              AI Remediation has been disabled by your administrator. Contact your admin to enable
+              it in Settings.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Generate / regenerate */}
-      {!plan && (
+      {!plan && !remediationDisabled && (
         <Card>
           <CardContent className="py-12 flex flex-col items-center gap-4">
             <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">

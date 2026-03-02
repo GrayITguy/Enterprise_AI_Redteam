@@ -45,8 +45,8 @@ export default function ScanDetail() {
     );
   }
 
-  const progress = scan.totalTests > 0
-    ? Math.round((scan.passedTests + scan.failedTests) / scan.totalTests * 100)
+  const progress = scan.progress != null
+    ? scan.progress
     : scan.status === "completed" ? 100 : 0;
 
   return (

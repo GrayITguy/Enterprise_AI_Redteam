@@ -51,6 +51,7 @@ const CREATE_SCHEMA_SQL = `
     total_tests INTEGER NOT NULL DEFAULT 0,
     passed_tests INTEGER NOT NULL DEFAULT 0,
     failed_tests INTEGER NOT NULL DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
     scheduled_at INTEGER,
     recurrence TEXT,
@@ -84,6 +85,13 @@ const CREATE_SCHEMA_SQL = `
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    updated_by TEXT REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS license_keys (
     id TEXT PRIMARY KEY,
     key_hash TEXT NOT NULL UNIQUE,
@@ -114,6 +122,7 @@ export function clearTestDb(): void {
     DELETE FROM scans;
     DELETE FROM projects;
     DELETE FROM invite_codes;
+    DELETE FROM app_settings;
     DELETE FROM license_keys;
     DELETE FROM users;
   `);
