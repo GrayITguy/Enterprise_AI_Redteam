@@ -81,6 +81,8 @@ export const scans = sqliteTable("scans", {
   recurrence: text("recurrence"),
   /** "always" = every completion; "failure" = only when failedTests > 0; null = no email */
   notifyOn: text("notify_on"),
+  /** 0-100 progress percentage, updated in real-time during scan execution */
+  progress: integer("progress").default(0).notNull(),
   startedAt: integer("started_at", { mode: "timestamp" }),
   completedAt: integer("completed_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -122,6 +124,19 @@ export const reports = sqliteTable("reports", {
   filePath: text("file_path").notNull(),
   sizeBytes: integer("size_bytes").default(0).notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// License Keys
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// App Settings (key-value platform configuration)
+// ─────────────────────────────────────────────────────────────────────────────
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  updatedBy: text("updated_by").references(() => users.id),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

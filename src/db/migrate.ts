@@ -114,6 +114,13 @@ function applySchemaDirectly(): void {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS license_keys (
       id TEXT PRIMARY KEY,
       key_hash TEXT NOT NULL UNIQUE,
@@ -137,6 +144,7 @@ function applySchemaDirectly(): void {
   const alterScans = [
     "ALTER TABLE scans ADD COLUMN recurrence TEXT",
     "ALTER TABLE scans ADD COLUMN notify_on TEXT",
+    "ALTER TABLE scans ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
   ];
   for (const stmt of alterScans) {
     try { sqlite.exec(stmt); } catch { /* column already exists */ }

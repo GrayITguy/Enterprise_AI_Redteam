@@ -106,6 +106,7 @@ worker.on("completed", async (job) => {
         totalTests: 0,
         passedTests: 0,
         failedTests: 0,
+        progress: 0,
         errorMessage: null,
         scheduledAt: nextRun,
         recurrence: row.recurrence,

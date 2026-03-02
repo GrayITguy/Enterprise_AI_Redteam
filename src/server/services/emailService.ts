@@ -1,21 +1,48 @@
 import nodemailer from "nodemailer";
 import { logger } from "../utils/logger.js";
+import { getSetting } from "./settingsService.js";
 
-/** Returns a nodemailer transport if SMTP_HOST is configured, null otherwise. */
-function createTransport() {
-  const host = process.env.SMTP_HOST;
+/**
+ * Returns a nodemailer transport.
+ * Resolution order: DB settings → environment variables → null (disabled).
+ */
+async function createTransport(): Promise<ReturnType<typeof nodemailer.createTransport> | null> {
+  // Try DB settings first
+  const dbHost = await getSetting("smtp.host");
+  const host = dbHost || process.env.SMTP_HOST;
   if (!host) return null;
+
+  const useDb = !!dbHost;
+
+  const port = useDb
+    ? parseInt((await getSetting("smtp.port")) ?? "587", 10)
+    : parseInt(process.env.SMTP_PORT ?? "587", 10);
+
+  const secure = useDb
+    ? (await getSetting("smtp.secure")) === "true"
+    : process.env.SMTP_SECURE === "true";
+
+  const user = useDb ? (await getSetting("smtp.user")) ?? "" : process.env.SMTP_USER ?? "";
+  const pass = useDb ? (await getSetting("smtp.password")) ?? "" : process.env.SMTP_PASS ?? "";
 
   return nodemailer.createTransport({
     host,
-    port: parseInt(process.env.SMTP_PORT ?? "587", 10),
-    secure: process.env.SMTP_SECURE === "true",
-    auth:
-      process.env.SMTP_USER && process.env.SMTP_PASS
-        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-        : undefined,
+    port,
+    secure,
+    auth: user && pass ? { user, pass } : undefined,
   });
 }
+
+/** Resolve the "From" address (DB → env → default). */
+async function getFromAddress(): Promise<string> {
+  return (
+    (await getSetting("smtp.from")) ??
+    process.env.SMTP_FROM ??
+    "no-reply@ai-redteam.local"
+  );
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 export interface ScanCompleteParams {
   toEmail: string;
@@ -28,14 +55,14 @@ export interface ScanCompleteParams {
 }
 
 export async function sendScanCompleteEmail(params: ScanCompleteParams): Promise<void> {
-  const transport = createTransport();
+  const transport = await createTransport();
   if (!transport) {
-    logger.debug("[Email] SMTP_HOST not configured — skipping scan-complete notification");
+    logger.debug("[Email] SMTP not configured — skipping scan-complete notification");
     return;
   }
 
   const { toEmail, projectName, scanId, totalTests, passedTests, failedTests, completedAt } = params;
-  const from = process.env.SMTP_FROM ?? "no-reply@ai-redteam.local";
+  const from = await getFromAddress();
   const baseUrl = (process.env.APP_URL ?? "http://localhost:15500").replace(/\/$/, "");
   const passRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
 
@@ -125,6 +152,28 @@ export async function sendScanCompleteEmail(params: ScanCompleteParams): Promise
   } catch (err) {
     logger.error(`[Email] Failed to send notification to ${toEmail}: ${err}`);
   }
+}
+
+/** Send a simple test email to verify SMTP configuration. */
+export async function sendTestEmail(toEmail: string): Promise<void> {
+  const transport = await createTransport();
+  if (!transport) {
+    throw new Error("SMTP is not configured. Set SMTP settings in the UI or via environment variables.");
+  }
+
+  const from = await getFromAddress();
+
+  await transport.sendMail({
+    from,
+    to: toEmail,
+    subject: "[AI Red Team] SMTP Test",
+    text: "This is a test email from Enterprise AI Red Team Platform. SMTP is configured correctly!",
+    html: `<div style="font-family:sans-serif;padding:20px">
+      <h2>SMTP Configuration Test</h2>
+      <p>This is a test email from <strong>Enterprise AI Red Team Platform</strong>.</p>
+      <p style="color:#22c55e;font-weight:bold">SMTP is configured correctly!</p>
+    </div>`,
+  });
 }
 
 function escapeHtml(s: string): string {

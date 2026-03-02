@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { getPluginById } from "../config/pluginCatalog.js";
 import { logger } from "../utils/logger.js";
+import { getSetting } from "../services/settingsService.js";
 
 export const remediationRouter = Router();
 remediationRouter.use(requireAuth);
@@ -190,6 +191,14 @@ async function callProjectProvider(
 remediationRouter.post(
   "/scans/:scanId/generate",
   async (req: AuthenticatedRequest, res) => {
+    // Check if remediation is enabled via admin settings
+    const remEnabled = await getSetting("remediation.enabled");
+    if (remEnabled === "false") {
+      return res.status(403).json({
+        error: "AI Remediation has been disabled by the administrator. Enable it in Settings.",
+      });
+    }
+
     const scan = await db
       .select({
         id: scans.id,
@@ -335,12 +344,31 @@ Rules:
 - riskScore: 0-25 = low risk, 26-50 = moderate, 51-75 = high, 76-100 = critical.`;
 
     try {
-      const responseText = await callLLM(
-        prompt,
-        project?.providerType ?? "ollama",
-        project?.targetUrl ?? "",
-        providerConfig
-      );
+      // Check if a dedicated remediation provider is configured in settings
+      const remProviderType = await getSetting("remediation.providerType");
+      let responseText: string;
+
+      if (remProviderType && remProviderType !== "project") {
+        // Use the admin-configured dedicated remediation provider
+        const remConfigRaw = await getSetting("remediation.providerConfig");
+        const remConfig: Record<string, unknown> = remConfigRaw
+          ? JSON.parse(remConfigRaw)
+          : {};
+        responseText = await callLLM(
+          prompt,
+          remProviderType,
+          (remConfig.endpoint as string) ?? "",
+          remConfig
+        );
+      } else {
+        // Default: use project's own provider + Anthropic fallback
+        responseText = await callLLM(
+          prompt,
+          project?.providerType ?? "ollama",
+          project?.targetUrl ?? "",
+          providerConfig
+        );
+      }
 
       // Parse the JSON from the LLM response
       const jsonText = extractJSON(responseText);
@@ -447,6 +475,7 @@ remediationRouter.post(
       totalTests: 0,
       passedTests: 0,
       failedTests: 0,
+      progress: 0,
       errorMessage: null,
       scheduledAt: null,
       recurrence: null,

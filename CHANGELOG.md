@@ -6,7 +6,21 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
-## [Unreleased] — Endpoint Auto-Bridge
+## [Unreleased] — Settings, Remediation Config & Progress Bar
+
+### Added
+- **Settings page: SMTP configuration** — admins can configure SMTP (host, port, TLS, credentials, from address) directly from the web UI instead of editing `.env` files. Includes "Send Test Email" button. DB settings take precedence over env vars; env vars remain as fallback.
+- **Settings page: AI Remediation provider** — admins can set a default AI provider (Ollama, OpenAI, Anthropic, or custom endpoint) for remediation plan generation across all projects, with per-project override option. Includes enable/disable toggle.
+- **`appSettings` database table** — key-value platform configuration store with AES-256-CBC encryption for sensitive values (API keys, SMTP passwords).
+- **Settings API** — `GET/PUT /api/settings/smtp`, `POST /api/settings/smtp/test`, `GET/PUT /api/settings/remediation` endpoints with admin role enforcement.
+- **Remediation enabled guard** — Remediation page shows a disabled banner when an admin has turned off AI remediation.
+
+### Fixed
+- **Progress bar jumps to 100% immediately** — `totalTests` was incremented alongside completed tests, making the ratio always ~100%. Now pre-calculates expected test count from `PLUGIN_ATTACKS` before scanning begins, and tracks a dedicated `progress` column (0-99% during scan, 100% on completion). Docker worker results that exceed the estimate gracefully adjust the total upward.
+
+---
+
+## [Previous] — Endpoint Auto-Bridge
 
 ### Added
 - **Endpoint Auto-Bridge** — zero-config local model scanning that makes `localhost` AI endpoints (Ollama, etc.) reachable from Docker-sandboxed scan workers:
