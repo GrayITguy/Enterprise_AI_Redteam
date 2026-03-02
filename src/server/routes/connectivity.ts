@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { logger } from "../utils/logger.js";
+import { resolveForHost, isRunningInDocker } from "../utils/resolveEndpoint.js";
 
 export const connectivityRouter = Router();
 
@@ -10,6 +11,7 @@ interface CheckResult {
   models?: string[];
   error?: string;
   suggestion?: string;
+  dockerResolved?: boolean;
 }
 
 /**
@@ -40,7 +42,10 @@ async function checkEndpoint(
   targetUrl: string,
   providerType?: string
 ): Promise<CheckResult> {
-  const baseUrl = targetUrl.replace(/\/+$/, "");
+  // In Docker, localhost refers to the container — resolve to host.docker.internal
+  const rawUrl = targetUrl.replace(/\/+$/, "");
+  const baseUrl = resolveForHost(rawUrl);
+  const dockerResolved = baseUrl !== rawUrl && isRunningInDocker();
   const start = Date.now();
 
   // For Ollama targets, probe the /api/tags endpoint
@@ -56,6 +61,7 @@ async function checkEndpoint(
         return {
           reachable: false,
           latencyMs,
+          dockerResolved,
           error: `Ollama returned HTTP ${resp.status}`,
           suggestion:
             "Ollama is running but returned an error. Check if the Ollama service is healthy.",
@@ -70,12 +76,13 @@ async function checkEndpoint(
           reachable: true,
           latencyMs,
           models,
+          dockerResolved,
           suggestion:
             "Ollama is running but has no models loaded. Pull a model with: ollama pull llama3",
         };
       }
 
-      return { reachable: true, latencyMs, models };
+      return { reachable: true, latencyMs, models, dockerResolved };
     } catch (err) {
       const latencyMs = Date.now() - start;
       const message = err instanceof Error ? err.message : String(err);
@@ -92,7 +99,7 @@ async function checkEndpoint(
       }
 
       logger.debug(`[Connectivity] Ollama probe failed: ${message}`);
-      return { reachable: false, latencyMs, error: message, suggestion };
+      return { reachable: false, latencyMs, dockerResolved, error: message, suggestion };
     }
   }
 
@@ -104,7 +111,7 @@ async function checkEndpoint(
     });
 
     const latencyMs = Date.now() - start;
-    return { reachable: resp.ok || resp.status < 500, latencyMs };
+    return { reachable: resp.ok || resp.status < 500, latencyMs, dockerResolved };
   } catch (err) {
     const latencyMs = Date.now() - start;
     const message = err instanceof Error ? err.message : String(err);
@@ -118,6 +125,6 @@ async function checkEndpoint(
       suggestion = `Could not reach target: ${message}`;
     }
 
-    return { reachable: false, latencyMs, error: message, suggestion };
+    return { reachable: false, latencyMs, dockerResolved, error: message, suggestion };
   }
 }

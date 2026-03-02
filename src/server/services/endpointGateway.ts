@@ -1,5 +1,6 @@
 import http from "node:http";
 import { logger } from "../utils/logger.js";
+import { resolveForHost } from "../utils/resolveEndpoint.js";
 
 /**
  * Endpoint Auto-Bridge — lightweight HTTP reverse proxy.
@@ -20,7 +21,8 @@ export class EndpointGateway {
 
   /** Start the gateway (idempotent — reuses existing server for the same target). */
   async start(targetUrl: string): Promise<number> {
-    const origin = new URL(targetUrl).origin;
+    // In Docker, localhost refers to the container — rewrite to host.docker.internal
+    const origin = new URL(resolveForHost(targetUrl)).origin;
 
     if (this.server && this.targetOrigin === origin) {
       // Already running for this target

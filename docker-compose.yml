@@ -13,6 +13,8 @@ services:
     container_name: eart-app
     ports:
       - "15500:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -24,6 +26,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       RSA_PUBLIC_KEY_PATH: /app/keys/license_public.pem
+      OLLAMA_URL: ${OLLAMA_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -55,12 +58,16 @@ services:
     image: enterpriseairedteam:latest
     container_name: eart-worker
     command: ["node", "dist/server/workers/scanWorker.js"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       NODE_ENV: production
       DATABASE_URL: /data/eart.db
       REDIS_URL: redis://redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REPORT_DIR: /data/reports
+      OLLAMA_URL: ${OLLAMA_URL:-}
+      EART_APP_URL: http://app:3000
     volumes:
       - app-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
