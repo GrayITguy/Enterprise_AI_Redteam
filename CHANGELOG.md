@@ -6,7 +6,23 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
-## [Unreleased] — OSS Release Preparation
+## [Unreleased] — Endpoint Auto-Bridge
+
+### Added
+- **Endpoint Auto-Bridge** — zero-config local model scanning that makes `localhost` AI endpoints (Ollama, etc.) reachable from Docker-sandboxed scan workers:
+  - `src/server/services/endpointGateway.ts` — lightweight HTTP reverse proxy (zero new deps) that runs on the host and bridges Docker containers to localhost services via `host.docker.internal`
+  - `src/server/routes/connectivity.ts` — `POST /api/connectivity/check` pre-flight endpoint that validates server-side reachability with latency, model enumeration, and actionable error suggestions
+  - **ScanBuilder pre-flight check** — auto-fires connectivity test when a project is selected; shows green/amber/red status with latency and model count
+  - **Projects page dual-check** — now shows both browser and server connectivity status when testing Ollama connections
+  - **Direct Ollama scan path** — Promptfoo attacks now call Ollama directly from the server when reachable, falling back to the browser relay only for truly remote deployments (eliminates "keep browser tab open" requirement)
+
+### Fixed
+- **Critical: camelCase/snake_case config mismatch** — `dockerRunner.ts` sent `targetUrl` (camelCase) but all three Python workers (Garak, PyRIT, DeepTeam) read `target_url` (snake_case), causing every Docker-based scan to receive empty config fields. Added `toSnakeConfig()` key transformation before serialization.
+- **Docker cross-platform networking** — replaced `--network=host` (Linux-only, security risk) with `--add-host=host.docker.internal:host-gateway` which works on Linux, macOS, and Windows Docker Desktop. Localhost URLs are automatically rewritten to `host.docker.internal:{gatewayPort}` for Docker containers.
+
+---
+
+## [Previous] — OSS Release Preparation
 
 ### Added
 - **Full test suite** — zero-to-comprehensive coverage across all four layers:

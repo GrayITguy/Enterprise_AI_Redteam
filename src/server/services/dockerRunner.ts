@@ -19,6 +19,40 @@ export interface DockerRunConfig {
   providerConfig: Record<string, unknown>;
   plugins: string[];
   tool: string;
+  gatewayPort?: number;
+}
+
+/** Convert camelCase config keys to snake_case for Python workers. */
+function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
+  const { gatewayPort, ...rest } = config;
+  let targetUrl = rest.targetUrl;
+
+  // When a gateway port is provided, rewrite localhost URLs so the Docker
+  // container reaches the host-side gateway via host.docker.internal.
+  if (gatewayPort && isLocalhostUrl(targetUrl)) {
+    const parsed = new URL(targetUrl);
+    targetUrl = `http://host.docker.internal:${gatewayPort}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+    logger.info(`[DockerRunner] Rewrote target URL → ${targetUrl}`);
+  }
+
+  return {
+    target_url: targetUrl,
+    model: rest.model,
+    provider_type: rest.providerType,
+    provider_config: rest.providerConfig,
+    plugins: rest.plugins,
+    tool: rest.tool,
+  };
+}
+
+/** Check whether a URL points to the local machine. */
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
 }
 
 export class DockerRunner {
@@ -37,7 +71,9 @@ export class DockerRunner {
     onResult?: (result: DockerScanResult) => Promise<void>
   ): Promise<DockerScanResult[]> {
     const image = this.getImage(tool);
-    const configJson = JSON.stringify(config);
+    // Convert to snake_case for Python workers and apply gateway URL rewriting
+    const snakeConfig = toSnakeConfig(config);
+    const configJson = JSON.stringify(snakeConfig);
     const results: DockerScanResult[] = [];
 
     logger.info(`[DockerRunner] Starting ${tool} worker (image: ${image})`);
@@ -50,7 +86,10 @@ export class DockerRunner {
         "--memory=2g",
         "--cpus=1",
         "--security-opt=no-new-privileges",
-        "--network=host", // allow reaching Ollama or OpenAI on the host
+        // Use --add-host instead of --network=host for cross-platform support.
+        // --network=host only works on Linux; --add-host works on Linux,
+        // macOS, and Windows Docker Desktop.
+        "--add-host=host.docker.internal:host-gateway",
         image,
       ];
 

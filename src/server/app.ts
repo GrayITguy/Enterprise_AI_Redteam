@@ -11,6 +11,7 @@ import { reportsRouter } from "./routes/reports.js";
 import { remediationRouter } from "./routes/remediation.js";
 import { licenseRouter } from "./routes/license.js";
 import { ollamaRouter } from "./routes/ollama.js";
+import { connectivityRouter } from "./routes/connectivity.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
 import { logger } from "./utils/logger.js";
@@ -68,6 +69,7 @@ app.use("/api/reports", reportsRouter);
 app.use("/api/remediation", remediationRouter);
 app.use("/api/license", licenseRouter);
 app.use("/api/ollama", ollamaRouter);
+app.use("/api/connectivity", connectivityRouter);
 
 // ─── Serve React SPA in production ───────────────────────────────────────────
 if (process.env.NODE_ENV === "production") {

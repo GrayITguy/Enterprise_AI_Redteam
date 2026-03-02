@@ -43,30 +43,54 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     error?: string;
   }>({ checking: false, running: null, models: [] });
 
+  const [serverStatus, setServerStatus] = useState<{
+    checking: boolean;
+    reachable: boolean | null;
+    latencyMs?: number;
+    suggestion?: string;
+  }>({ checking: false, reachable: null });
+
   async function checkOllama(url: string) {
     if (!url) return;
     setOllamaStatus({ checking: true, running: null, models: [], error: undefined });
+    setServerStatus({ checking: true, reachable: null });
+
+    // Browser-side check (original)
     try {
-      // Call Ollama directly from the browser — the backend proxy cannot reach
-      // localhost:11434 when EART runs on a different host than Ollama.
       const base = url.replace(/\/+$/, "");
       const resp = await fetch(`${base}/api/tags`, {
         signal: AbortSignal.timeout(5_000),
       });
       if (!resp.ok) {
         setOllamaStatus({ checking: false, running: false, models: [], error: `HTTP ${resp.status}` });
-        return;
-      }
-      const data = (await resp.json()) as { models?: Array<{ name: string }> };
-      const models = (data.models ?? []).map((m) => m.name);
-      setOllamaStatus({ checking: false, running: true, models });
-      // Auto-select first model when form model is blank
-      if (models.length > 0 && !form.model) {
-        setForm((f) => ({ ...f, model: models[0] }));
+      } else {
+        const data = (await resp.json()) as { models?: Array<{ name: string }> };
+        const models = (data.models ?? []).map((m) => m.name);
+        setOllamaStatus({ checking: false, running: true, models });
+        if (models.length > 0 && !form.model) {
+          setForm((f) => ({ ...f, model: models[0] }));
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setOllamaStatus({ checking: false, running: false, models: [], error: message });
+    }
+
+    // Server-side check (new — verifies the backend can reach the target)
+    try {
+      const res = await api.post("/connectivity/check", {
+        targetUrl: url,
+        providerType: "ollama",
+      });
+      const data = res.data as { reachable: boolean; latencyMs: number; suggestion?: string };
+      setServerStatus({
+        checking: false,
+        reachable: data.reachable,
+        latencyMs: data.latencyMs,
+        suggestion: data.suggestion,
+      });
+    } catch {
+      setServerStatus({ checking: false, reachable: false, suggestion: "Could not reach connectivity API" });
     }
   }
 
@@ -171,14 +195,37 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
         {isOllama && ollamaStatus.running === true && (
           <p className="flex items-center gap-1.5 text-xs text-green-600">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Connected — {ollamaStatus.models.length} model{ollamaStatus.models.length !== 1 ? "s" : ""} available
+            Browser: Connected — {ollamaStatus.models.length} model{ollamaStatus.models.length !== 1 ? "s" : ""} available
           </p>
         )}
         {isOllama && ollamaStatus.running === false && (
           <p className="flex items-center gap-1.5 text-xs text-destructive">
             <XCircle className="h-3.5 w-3.5" />
-            Unreachable{ollamaStatus.error ? `: ${ollamaStatus.error}` : ""}
+            Browser: Unreachable{ollamaStatus.error ? `: ${ollamaStatus.error}` : ""}
           </p>
+        )}
+        {isOllama && serverStatus.checking && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Checking server connectivity…
+          </p>
+        )}
+        {isOllama && serverStatus.reachable === true && (
+          <p className="flex items-center gap-1.5 text-xs text-green-600">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Server: Connected ({serverStatus.latencyMs}ms)
+          </p>
+        )}
+        {isOllama && serverStatus.reachable === false && !serverStatus.checking && (
+          <div className="space-y-0.5">
+            <p className="flex items-center gap-1.5 text-xs text-amber-500">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Server: Cannot reach Ollama directly
+            </p>
+            <p className="text-[11px] text-muted-foreground pl-5">
+              The Endpoint Auto-Bridge will route scan traffic automatically.
+            </p>
+          </div>
         )}
         {!isOllama && (
           <p className="text-xs text-muted-foreground">OpenAI-compatible base URL</p>

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar, Bell, Repeat, Search, X } from "lucide-react";
+import { Shield, Zap, Target, ChevronRight, AlertTriangle, Calendar, Bell, Repeat, Search, X, CheckCircle, XCircle, Loader2, Wifi } from "lucide-react";
 
 /** Convert a datetime-local string (YYYY-MM-DDTHH:MM) to ISO-8601. */
 function localToIso(local: string): string {
@@ -98,6 +98,28 @@ export default function ScanBuilder() {
   const { data: catalog } = useQuery({
     queryKey: ["scan-catalog"],
     queryFn: () => api.get("/scans/catalog").then((r) => r.data as any),
+  });
+
+  // Pre-flight connectivity check — fires when a project is selected
+  const selectedProject = projects.find((p: any) => p.id === selectedProjectId);
+  const { data: connCheck, isFetching: connChecking } = useQuery({
+    queryKey: ["connectivity-check", selectedProjectId],
+    queryFn: () =>
+      api
+        .post("/connectivity/check", {
+          targetUrl: selectedProject?.targetUrl,
+          providerType: selectedProject?.providerType,
+        })
+        .then((r) => r.data as {
+          reachable: boolean;
+          latencyMs: number;
+          models?: string[];
+          error?: string;
+          suggestion?: string;
+        }),
+    enabled: !!selectedProjectId && !!selectedProject?.targetUrl,
+    staleTime: 30_000,
+    retry: false,
   });
 
   const plugins: any[] = catalog?.plugins ?? [];
@@ -216,6 +238,45 @@ export default function ScanBuilder() {
                 <a href="/projects" className="text-primary underline">Create a project</a> first.
               </AlertDescription>
             </Alert>
+          )}
+
+          {/* Pre-flight connectivity check */}
+          {selectedProjectId && selectedProject && (
+            <div className="mt-3 max-w-md">
+              {connChecking ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Checking server connectivity to {selectedProject.targetUrl}…
+                </div>
+              ) : connCheck?.reachable ? (
+                <div className="flex items-center gap-2 text-sm text-green-500">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Server connected ({connCheck.latencyMs}ms)
+                  {connCheck.models && connCheck.models.length > 0 && (
+                    <span className="text-muted-foreground">
+                      · {connCheck.models.length} model{connCheck.models.length !== 1 ? "s" : ""} available
+                    </span>
+                  )}
+                </div>
+              ) : connCheck ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-sm text-amber-500">
+                    <Wifi className="h-3.5 w-3.5" />
+                    Server cannot reach target directly
+                  </div>
+                  {connCheck.suggestion && (
+                    <p className="text-xs text-muted-foreground pl-5">
+                      {connCheck.suggestion}
+                    </p>
+                  )}
+                  {selectedProject.providerType === "ollama" && (
+                    <p className="text-xs text-muted-foreground pl-5">
+                      The Endpoint Auto-Bridge will attempt to route traffic during the scan.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
           )}
         </CardContent>
       </Card>
