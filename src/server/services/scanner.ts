@@ -4,7 +4,18 @@ import { scans, scanResults, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { resolvePlugins, type PluginTool } from "../config/pluginCatalog.js";
 import { DockerRunner } from "./dockerRunner.js";
+import { gateway } from "./endpointGateway.js";
 import { logger } from "../utils/logger.js";
+
+/** Check whether a URL points to the local machine. */
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
 
 // ─── Adversarial attack library ───────────────────────────────────────────────
 // Each entry: the adversarial prompt + a regex whose match means the model was compromised.
@@ -265,6 +276,24 @@ export class ScanOrchestrator {
       let passedTests = 0;
       let failedTests = 0;
 
+      // ── Endpoint Auto-Bridge: start gateway for localhost targets ────────
+      const isLocal = isLocalhostUrl(project.targetUrl);
+      let gatewayPort: number | undefined;
+      if (isLocal) {
+        try {
+          gatewayPort = await gateway.start(project.targetUrl);
+          gateway.acquire();
+          logger.info(
+            `[Scanner] Endpoint gateway active on port ${gatewayPort} for ${project.targetUrl}`
+          );
+        } catch (err) {
+          logger.warn(
+            `[Scanner] Could not start endpoint gateway: ${err instanceof Error ? err.message : err}. ` +
+              `Docker workers may not be able to reach localhost targets.`
+          );
+        }
+      }
+
       // Shared result persister — used by all tools
       const persistResult: ResultCallback = async (r) => {
         await db.insert(scanResults).values({
@@ -290,6 +319,7 @@ export class ScanOrchestrator {
           .where(eq(scans.id, scanId));
       };
 
+      try {
       for (const tool of tools) {
         const toolPlugins = byTool[tool];
         logger.info(`[Scanner] Running ${tool} with ${toolPlugins.length} plugins`);
@@ -301,6 +331,7 @@ export class ScanOrchestrator {
           providerConfig,
           plugins: toolPlugins,
           tool,
+          ...(gatewayPort != null ? { gatewayPort } : {}),
         };
 
         if (tool === "promptfoo") {
@@ -346,6 +377,12 @@ export class ScanOrchestrator {
 
         completedTools++;
         onProgress?.(Math.round((completedTools / tools.length) * 100));
+      }
+      } finally {
+        // ── Release the endpoint gateway when all tools are done ──────────
+        if (isLocal && gatewayPort != null) {
+          gateway.release();
+        }
       }
 
       await db
@@ -396,12 +433,19 @@ export class ScanOrchestrator {
       return this.runPromptfooUnavailable(config, onResult);
     }
 
-    // ── Ollama: bypass Promptfoo and use the browser relay ────────────────────
-    // Promptfoo's ollama provider calls localhost:11434 directly from the server
-    // process, which fails when EART is hosted remotely.  Instead, we run the
-    // attacks ourselves and route each call through the browser relay so the
-    // browser (on the user's machine) can reach their local Ollama.
+    // ── Ollama: try direct call first, fall back to browser relay ──────────
+    // When running on the same machine as Ollama, call it directly (fastest).
+    // When hosted remotely, the browser relay forwards via the user's browser.
     if (config.providerType === "ollama") {
+      const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const directReachable = await this.probeOllama(ollamaUrl);
+
+      if (directReachable) {
+        logger.info(`[Scanner][promptfoo] Ollama reachable directly at ${ollamaUrl} — skipping browser relay`);
+        return this.runOllamaAttacksDirect(config, onResult);
+      }
+
+      logger.info(`[Scanner][promptfoo] Ollama not directly reachable — using browser relay`);
       return this.runOllamaAttacksViaRelay(config, onResult);
     }
 
@@ -484,6 +528,113 @@ export class ScanOrchestrator {
             response: null,
             passed: false,
             evidence: JSON.stringify({ error: String(err), pluginId }),
+          });
+        }
+      }
+    }
+  }
+
+  /** Quick connectivity probe — returns true if Ollama responds within 5 s. */
+  private async probeOllama(ollamaUrl: string): Promise<boolean> {
+    try {
+      const resp = await fetch(`${ollamaUrl}/api/tags`, {
+        signal: AbortSignal.timeout(5_000),
+      });
+      return resp.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Run promptfoo plugin attacks against Ollama directly (no browser relay).
+   * Used when the server process can reach Ollama on its own — the fastest path.
+   */
+  private async runOllamaAttacksDirect(
+    config: {
+      plugins: string[];
+      targetUrl: string;
+      providerConfig: Record<string, unknown>;
+      model?: string;
+    },
+    onResult: ResultCallback
+  ): Promise<void> {
+    const ollamaUrl = (config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+    const model =
+      (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
+
+    logger.info(`[Scanner][ollama-direct] Running attacks directly → ${ollamaUrl}`);
+
+    for (const pluginId of config.plugins) {
+      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+      const attacks = PLUGIN_ATTACKS[pfId];
+
+      if (!attacks || attacks.length === 0) {
+        await onResult({
+          tool: "promptfoo",
+          category: pfId,
+          severity: this.getSeverity(pluginId),
+          testName: `[promptfoo] ${pfId}`,
+          owaspCategory: this.getOwasp(pluginId),
+          prompt: `(no attack tests defined for ${pfId})`,
+          response: null,
+          passed: true,
+          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
+        });
+        continue;
+      }
+
+      for (const attack of attacks) {
+        const start = Date.now();
+        try {
+          const resp = await fetch(`${ollamaUrl}/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "user", content: attack.prompt }],
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+
+          if (!resp.ok) {
+            throw new Error(`Ollama returned HTTP ${resp.status}`);
+          }
+
+          const data = (await resp.json()) as { message?: { content?: string } };
+          const responseText = data.message?.content ?? "";
+          const passed = !attack.failPattern.test(responseText);
+          const latencyMs = Date.now() - start;
+
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: responseText,
+            passed,
+            evidence: JSON.stringify({
+              pluginId,
+              failPattern: attack.failPattern.toString(),
+              latencyMs,
+              direct: true,
+            }),
+          });
+        } catch (err) {
+          logger.error(`[Scanner][ollama-direct] Error for plugin ${pfId}: ${err}`);
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: null,
+            passed: false,
+            evidence: JSON.stringify({ error: String(err), pluginId, direct: true }),
           });
         }
       }

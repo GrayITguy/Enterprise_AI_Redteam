@@ -23,11 +23,49 @@ vi.mock("../server/services/queue.js", () => ({
   },
 }));
 
+// Mock the endpoint gateway so tests don't start real HTTP servers
+vi.mock("../server/services/endpointGateway.js", () => ({
+  gateway: {
+    start: vi.fn().mockResolvedValue(19999),
+    acquire: vi.fn(),
+    release: vi.fn(),
+    forceStop: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 // Mock promptfoo to avoid real AI calls
 vi.mock("promptfoo", () => ({
   evaluate: vi.fn().mockResolvedValue({ results: [] }),
   default: { evaluate: vi.fn().mockResolvedValue({ results: [] }) },
 }));
+
+// Mock global fetch so probeOllama and direct Ollama calls don't make real
+// network requests.  The probe returns "ok" so the scanner takes the fast
+// direct path instead of the slow relay-with-retries path.
+const _originalFetch = globalThis.fetch;
+beforeEach(() => {
+  globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+    if (typeof url === "string" && url.includes("/api/tags")) {
+      // Ollama probe — return a valid response so probeOllama() → true
+      return new Response(JSON.stringify({ models: [{ name: "llama3" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (typeof url === "string" && url.includes("/api/chat")) {
+      // Direct Ollama attack call — return a harmless response
+      return new Response(
+        JSON.stringify({ message: { content: "I cannot help with that." } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    // Anything else (relay, etc.) — reject immediately
+    throw new Error("mock: ECONNREFUSED");
+  });
+});
+afterEach(() => {
+  globalThis.fetch = _originalFetch;
+});
 
 // Import after mocks are set up
 const { ScanOrchestrator } = await import("../server/services/scanner.js");
