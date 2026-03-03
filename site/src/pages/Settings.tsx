@@ -442,6 +442,14 @@ function RemediationSettings() {
     }
   }, [providerType]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Debounced auto-detect for OpenAI when API key is entered
+  useEffect(() => {
+    if (providerType !== "openai") return;
+    if (!apiKey) return;
+    const timer = setTimeout(() => fetchModels("openai", "", apiKey), 800);
+    return () => clearTimeout(timer);
+  }, [apiKey, providerType]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset detected models when provider type changes
   useEffect(() => {
     setDetectedModels([]);
