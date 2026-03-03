@@ -10,6 +10,7 @@ import {
   setSetting,
   getSettings,
 } from "../services/settingsService.js";
+import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
 
 export const settingsRouter = Router();
@@ -225,9 +226,9 @@ settingsRouter.post(
 
     try {
       if (providerType === "ollama") {
-        const base = (endpoint || "http://localhost:11434").replace(/\/+$/, "");
+        const base = resolveForHost((endpoint || "http://localhost:11434").replace(/\/+$/, ""));
         const resp = await fetch(`${base}/api/tags`, {
-          signal: AbortSignal.timeout(5_000),
+          signal: AbortSignal.timeout(10_000),
         });
         if (!resp.ok) {
           return res.status(502).json({
@@ -246,9 +247,9 @@ settingsRouter.post(
       }
 
       if (providerType === "openai" || providerType === "custom") {
-        const base = (
-          endpoint || "https://api.openai.com"
-        ).replace(/\/+$/, "");
+        const base = resolveForHost(
+          (endpoint || "https://api.openai.com").replace(/\/+$/, "")
+        );
         if (!effectiveApiKey && providerType === "openai") {
           return res
             .status(400)
