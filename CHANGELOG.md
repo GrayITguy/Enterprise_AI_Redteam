@@ -12,10 +12,12 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Settings page: SMTP configuration** — admins can configure SMTP (host, port, TLS, credentials, from address) directly from the web UI instead of editing `.env` files. Includes "Send Test Email" button. DB settings take precedence over env vars; env vars remain as fallback.
 - **Settings page: AI Remediation provider** — admins can set a default AI provider (Ollama, OpenAI, Anthropic, or custom endpoint) for remediation plan generation across all projects, with per-project override option. Includes enable/disable toggle.
 - **`appSettings` database table** — key-value platform configuration store with AES-256-CBC encryption for sensitive values (API keys, SMTP passwords).
-- **Settings API** — `GET/PUT /api/settings/smtp`, `POST /api/settings/smtp/test`, `GET/PUT /api/settings/remediation` endpoints with admin role enforcement.
+- **Settings API** — `GET/PUT /api/settings/smtp`, `POST /api/settings/smtp/test`, `GET/PUT /api/settings/remediation`, `POST /api/settings/models` endpoints with admin role enforcement.
+- **Model auto-detection in Remediation settings** — Ollama and OpenAI-compatible endpoints are probed automatically when the admin enters an endpoint URL (or API key for OpenAI). Detected models populate a dropdown selector instead of a manual text input. Anthropic shows its well-known model list. A manual "Detect" button is also available.
 - **Remediation enabled guard** — Remediation page shows a disabled banner when an admin has turned off AI remediation.
 
 ### Fixed
+- **AI provider settings not used for remediation & narrative generation** — Executive summary (narrative) and remediation plan generation now respect the admin-configured AI provider from Settings. Previously the narrative endpoint always used the project's own provider, ignoring saved settings. Extracted duplicated `callLLM`/`callProjectProvider` logic (~170 lines each in `remediation.ts` and `results.ts`) into a shared `aiProvider.ts` service to prevent future drift.
 - **Progress bar jumps to 100% immediately** — `totalTests` was incremented alongside completed tests, making the ratio always ~100%. Now pre-calculates expected test count from `PLUGIN_ATTACKS` before scanning begins, and tracks a dedicated `progress` column (0-99% during scan, 100% on completion). Docker worker results that exceed the estimate gracefully adjust the total upward.
 
 ---
