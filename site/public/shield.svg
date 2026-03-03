@@ -1,16 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-  <path
-    d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V6L12 2z"
-    fill="#3b82f6"
-    stroke="#1d4ed8"
-    stroke-width="1"
-    stroke-linejoin="round"
-  />
-  <path
-    d="M9 12l2 2 4-4"
-    stroke="#ffffff"
-    stroke-width="1.75"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
+  <defs>
+    <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="0.8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2a0008;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#0a0002;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield body -->
+  <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V6L12 2z"
+        fill="url(#shieldGrad)" stroke="#FF1A3C" stroke-width="1.2" stroke-linejoin="round" filter="url(#neon-glow)"/>
+  <!-- Inner shield outline -->
+  <path d="M12 4.5L5.5 7.6v4.4c0 3.7 2.6 7.1 6.5 8.1c3.9-1 6.5-4.4 6.5-8.1V7.6L12 4.5z"
+        fill="none" stroke="#FF1A3C" stroke-width="0.4" opacity="0.45"/>
+  <!-- Lightning bolt icon -->
+  <path d="M13.2 7.5l-3.2 4.5h2.2l-2.4 4.5 5.2-5.8h-2.4l2.2-3.2z"
+        fill="#FF1A3C" filter="url(#neon-glow)"/>
 </svg>
