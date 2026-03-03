@@ -61,7 +61,7 @@ async function callLLM(
   providerConfig: Record<string, unknown>,
   maxTokens: number
 ): Promise<string> {
-  const model = (providerConfig.model as string) || "llama3";
+  const model = (providerConfig.model as string) || "";
 
   // 1. Try the specified provider
   try {
@@ -109,7 +109,7 @@ async function callProvider(
     case "ollama": {
       const url = resolveForHost((targetUrl || "http://localhost:11434").replace(/\/+$/, ""));
       const ollamaBody = {
-        model,
+        model: model || "llama3",
         messages: [{ role: "user", content: prompt }],
         stream: false,
       };
