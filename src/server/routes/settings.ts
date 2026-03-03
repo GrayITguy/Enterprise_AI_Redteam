@@ -158,27 +158,42 @@ settingsRouter.put(
     const { enabled, providerType, providerConfig } = parsed.data;
     const userId = req.user!.id;
 
+    // Read old provider type BEFORE overwriting so we can detect provider switches
+    const oldProviderType = await getSetting("remediation.providerType");
+
     await setSetting("remediation.enabled", String(enabled), userId);
     await setSetting("remediation.providerType", providerType, userId);
+
     if (providerConfig) {
-      // If no new apiKey provided, preserve existing one
-      if (
-        providerConfig.apiKey === undefined ||
-        providerConfig.apiKey === ""
-      ) {
-        const existing = await getSetting("remediation.providerConfig");
-        if (existing) {
-          const old = JSON.parse(existing);
-          if (old.apiKey) {
-            providerConfig.apiKey = old.apiKey;
+      const needsApiKey = ["openai", "anthropic", "custom"].includes(providerType);
+      const needsEndpoint = ["ollama", "custom"].includes(providerType);
+
+      // Build clean config with only provider-relevant fields
+      const cleanConfig: Record<string, string> = {};
+      if (providerConfig.model) cleanConfig.model = providerConfig.model;
+      if (needsEndpoint && providerConfig.endpoint) cleanConfig.endpoint = providerConfig.endpoint;
+
+      if (needsApiKey) {
+        if (providerConfig.apiKey) {
+          cleanConfig.apiKey = providerConfig.apiKey;
+        } else if (oldProviderType === providerType) {
+          // Only carry over old API key if provider type hasn't changed
+          const existing = await getSetting("remediation.providerConfig");
+          if (existing) {
+            const old = JSON.parse(existing);
+            if (old.apiKey) cleanConfig.apiKey = old.apiKey;
           }
         }
       }
+
       await setSetting(
         "remediation.providerConfig",
-        JSON.stringify(providerConfig),
+        JSON.stringify(cleanConfig),
         userId
       );
+    } else {
+      // Provider is "project" — clear any stale config
+      await setSetting("remediation.providerConfig", JSON.stringify({}), userId);
     }
 
     logger.info(

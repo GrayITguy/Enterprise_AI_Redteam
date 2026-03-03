@@ -449,18 +449,21 @@ function RemediationSettings() {
   }, [providerType]);
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.put("/settings/remediation", {
+    mutationFn: () => {
+      const needsApiKey = ["openai", "anthropic", "custom"].includes(providerType);
+      const needsEndpoint = ["ollama", "custom"].includes(providerType);
+      return api.put("/settings/remediation", {
         enabled,
         providerType,
         providerConfig: providerType !== "project"
           ? {
-              ...(apiKey ? { apiKey } : {}),
+              ...(needsApiKey && apiKey ? { apiKey } : {}),
               ...(model ? { model } : {}),
-              ...(endpoint ? { endpoint } : {}),
+              ...(needsEndpoint && endpoint ? { endpoint } : {}),
             }
           : undefined,
-      }),
+      });
+    },
     onSuccess: () => {
       setSaveMsg("Remediation settings saved");
       if (apiKey) setHasApiKey(true);
@@ -520,6 +523,9 @@ function RemediationSettings() {
                 onValueChange={(v) => {
                   setProviderType(v);
                   setModel("");
+                  setEndpoint("");
+                  setApiKey("");
+                  setHasApiKey(false);
                 }}
               >
                 <SelectTrigger>
