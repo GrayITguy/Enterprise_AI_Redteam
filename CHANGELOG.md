@@ -18,6 +18,8 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ### Fixed
 - **AI provider settings not used for remediation & narrative generation** — Executive summary (narrative) and remediation plan generation now respect the admin-configured AI provider from Settings. Previously the narrative endpoint always used the project's own provider, ignoring saved settings. Extracted duplicated `callLLM`/`callProjectProvider` logic (~170 lines each in `remediation.ts` and `results.ts`) into a shared `aiProvider.ts` service to prevent future drift.
+- **Ollama unreachable from Docker — model detection, executive summary, and remediation all fail** — `aiProvider.ts` and `settings.ts` never called `resolveForHost()`, so `localhost` URLs stayed as-is inside Docker containers (where `localhost` is the container itself, not the host). Now all provider URLs in `callProvider()` and `/api/settings/models` are resolved through `resolveForHost()` which rewrites `localhost`/`127.0.0.1` → `host.docker.internal` when running in Docker.
+- **Ollama chat timeout too short** — The Ollama provider in `aiProvider.ts` used an 8-second timeout, far too short for remediation prompts that can take 30–60 seconds. Increased to 120 seconds to match the OpenAI/custom provider timeouts. Settings model detection timeout also increased from 5 to 10 seconds to handle cold starts.
 - **Progress bar jumps to 100% immediately** — `totalTests` was incremented alongside completed tests, making the ratio always ~100%. Now pre-calculates expected test count from `PLUGIN_ATTACKS` before scanning begins, and tracks a dedicated `progress` column (0-99% during scan, 100% on completion). Docker worker results that exceed the estimate gracefully adjust the total upward.
 
 ---

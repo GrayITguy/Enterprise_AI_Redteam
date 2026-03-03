@@ -14,10 +14,12 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 ## Features
 
 - **Dashboard** — severity charts, pass-rate trend (last 30 scans), upcoming scans widget, and a notification badge showing newly completed scans
-- **Scan Builder** — 41-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins
+- **Scan Builder** — 41-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins; pre-flight connectivity check with green/amber/red status
 - **Scan Scheduler** — schedule one-off or recurring scans (daily / weekly / monthly) with email notifications (always / failure-only / never)
 - **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and an AI-powered executive summary
 - **Remediation Engine** — AI-generated remediation plans with risk scoring (0–100), root-cause analysis per OWASP category, copy-pasteable system-prompt hardening, guardrail configs, and one-click verification re-scans — works fully offline via local Ollama
+- **Settings (admin)** — configure a default AI provider for remediation & summaries (Ollama, OpenAI, Anthropic, or custom endpoint with model auto-detection), and SMTP for email notifications — all from the web UI
+- **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` AI endpoints are automatically bridged into Docker-sandboxed workers without manual network configuration
 - **Reports** — generate and download PDF or JSON reports per scan
 - **License Management** — free tier included; activate a commercial license key for unlimited concurrent scans
 - **Team Access** — JWT-based auth with admin / analyst / viewer roles and invite-code registration
@@ -122,8 +124,10 @@ Express (Node.js + TypeScript) — port 3000 (15500 external)
     ├── Drizzle ORM → SQLite (./data/eart.db) [or Postgres]
     ├── BullMQ → Redis (scan job queue)
     ├── Scheduler → polls every 5 min for due recurring scans
-    ├── Nodemailer → SMTP email notifications
-    ├── Remediation → calls project's own LLM (provider-agnostic)
+    ├── Nodemailer → SMTP (env vars or admin-configured via Settings)
+    ├── AI Provider → shared service for remediation & summaries
+    │                  (admin Settings provider → project provider → ANTHROPIC_API_KEY)
+    ├── Endpoint Gateway → reverse proxy bridging localhost → Docker
     └── docker run --rm → Python workers (JSONL stdio)
                               ├── eart-garak:latest
                               ├── eart-pyrit:latest
@@ -165,17 +169,25 @@ enterpriseairedteam/
 │   │   │   └── errorHandler.ts
 │   │   ├── routes/             # API route handlers
 │   │   │   ├── remediation.ts  # AI remediation + verify re-scans
+│   │   │   ├── settings.ts     # SMTP + Remediation provider config
+│   │   │   ├── connectivity.ts # Pre-flight endpoint reachability check
 │   │   │   └── ...
 │   │   ├── services/           # Business logic
 │   │   │   ├── scanner.ts      # Scan orchestrator
 │   │   │   ├── dockerRunner.ts # Python worker spawner
-│   │   │   ├── emailService.ts # Nodemailer notifications
+│   │   │   ├── aiProvider.ts   # Shared AI provider resolution
+│   │   │   ├── emailService.ts # Nodemailer notifications (env + DB config)
+│   │   │   ├── settingsService.ts # Encrypted key-value settings store
+│   │   │   ├── endpointGateway.ts # Reverse proxy: localhost → Docker
+│   │   │   ├── ollamaRelay.ts  # Browser relay for Ollama
 │   │   │   ├── scheduler.ts    # Recurring scan scheduler
 │   │   │   └── reportGenerator.ts
+│   │   ├── utils/
+│   │   │   └── resolveEndpoint.ts # Docker-aware URL rewriting
 │   │   └── workers/
 │   │       └── scanWorker.ts   # BullMQ worker process
 │   ├── db/
-│   │   ├── schema.ts           # Drizzle table definitions
+│   │   ├── schema.ts           # Drizzle table definitions (incl. appSettings)
 │   │   └── index.ts
 │   └── license-validator.ts    # Offline RSA license check
 ├── site/                       # React frontend (Vite)
@@ -243,6 +255,21 @@ enterpriseairedteam/
 | POST | `/api/reports/:scanId/generate` | Generate PDF/JSON report |
 | GET | `/api/reports/:scanId/download/:reportId` | Download report file |
 
+### Settings (admin)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/settings/smtp` | SMTP configuration (password redacted) |
+| PUT | `/api/settings/smtp` | Save SMTP settings |
+| POST | `/api/settings/smtp/test` | Send a test email |
+| GET | `/api/settings/remediation` | AI remediation provider config (API key redacted) |
+| PUT | `/api/settings/remediation` | Save remediation provider settings |
+| POST | `/api/settings/models` | Auto-detect available models for a provider |
+
+### Connectivity
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/connectivity/check` | Pre-flight endpoint reachability + latency check |
+
 ### License
 | Method | Path | Description |
 |--------|------|-------------|
@@ -260,13 +287,13 @@ enterpriseairedteam/
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `REPORT_DIR` | `./data/reports` | Where PDF/JSON reports are stored |
 | `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
-| `ANTHROPIC_API_KEY` | — | Optional cloud fallback for AI summaries and remediation (not required when using Ollama or other project providers) |
+| `ANTHROPIC_API_KEY` | — | Cloud fallback for AI summaries and remediation. Not required when a provider is configured in Settings or when using Ollama/OpenAI via project config |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model to use when falling back to Anthropic API |
-| `SMTP_HOST` | — | SMTP server for email notifications |
-| `SMTP_PORT` | `587` | SMTP port |
-| `SMTP_USER` | — | SMTP username |
-| `SMTP_PASS` | — | SMTP password |
-| `SMTP_FROM` | — | From address for notification emails |
+| `SMTP_HOST` | — | SMTP server for email notifications (can also be set via Settings UI) |
+| `SMTP_PORT` | `587` | SMTP port (can also be set via Settings UI) |
+| `SMTP_USER` | — | SMTP username (can also be set via Settings UI) |
+| `SMTP_PASS` | — | SMTP password (can also be set via Settings UI) |
+| `SMTP_FROM` | — | From address for notification emails (can also be set via Settings UI) |
 | `CORS_ORIGIN` | `*` | Allowed CORS origin(s) |
 | `OLLAMA_URL` | — | Override Ollama endpoint for Docker deployments (auto-detected when unset) |
 | `EART_APP_URL` | — | Internal URL for worker→app communication (set automatically in docker-compose) |

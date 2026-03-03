@@ -7,6 +7,7 @@
  *   3. ANTHROPIC_API_KEY env var as cloud fallback
  */
 import { logger } from "../utils/logger.js";
+import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { getSetting } from "./settingsService.js";
 
 export interface ProjectInfo {
@@ -106,7 +107,7 @@ async function callProvider(
 ): Promise<string | null> {
   switch (providerType) {
     case "ollama": {
-      const url = (targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const url = resolveForHost((targetUrl || "http://localhost:11434").replace(/\/+$/, ""));
       const ollamaBody = {
         model,
         messages: [{ role: "user", content: prompt }],
@@ -119,7 +120,7 @@ async function callProvider(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ollamaBody),
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(120_000),
         });
         if (resp.ok) {
           const data = (await resp.json()) as { message?: { content?: string } };
@@ -140,7 +141,7 @@ async function callProvider(
     case "openai": {
       const apiKey = providerConfig.apiKey as string | undefined;
       if (!apiKey) return null;
-      const base = (targetUrl || "https://api.openai.com").replace(/\/+$/, "");
+      const base = resolveForHost((targetUrl || "https://api.openai.com").replace(/\/+$/, ""));
       const resp = await fetch(`${base}/v1/chat/completions`, {
         method: "POST",
         headers: {
@@ -178,6 +179,7 @@ async function callProvider(
     case "custom":
     default: {
       if (!targetUrl) return null;
+      const resolvedUrl = resolveForHost(targetUrl);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(providerConfig.headers as Record<string, string> | undefined),
@@ -185,7 +187,7 @@ async function callProvider(
       const apiKey = providerConfig.apiKey as string | undefined;
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-      const resp = await fetch(targetUrl, {
+      const resp = await fetch(resolvedUrl, {
         method: "POST",
         headers,
         body: JSON.stringify({
