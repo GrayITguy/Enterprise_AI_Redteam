@@ -17,6 +17,7 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Remediation enabled guard** — Remediation page shows a disabled banner when an admin has turned off AI remediation.
 
 ### Fixed
+- **AI provider settings not used for remediation & narrative generation** — Executive summary (narrative) and remediation plan generation now respect the admin-configured AI provider from Settings. Previously the narrative endpoint always used the project's own provider, ignoring saved settings. Extracted duplicated `callLLM`/`callProjectProvider` logic (~170 lines each in `remediation.ts` and `results.ts`) into a shared `aiProvider.ts` service to prevent future drift.
 - **Progress bar jumps to 100% immediately** — `totalTests` was incremented alongside completed tests, making the ratio always ~100%. Now pre-calculates expected test count from `PLUGIN_ATTACKS` before scanning begins, and tracks a dedicated `progress` column (0-99% during scan, 100% on completion). Docker worker results that exceed the estimate gracefully adjust the total upward.
 
 ---
