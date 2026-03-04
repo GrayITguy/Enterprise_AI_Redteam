@@ -12,6 +12,7 @@ import {
 } from "../services/settingsService.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
+import { testProvider } from "../services/aiProvider.js";
 
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
@@ -200,6 +201,53 @@ settingsRouter.put(
       `[Settings] Remediation settings updated by ${req.user!.email}`
     );
     res.json({ message: "Remediation settings saved" });
+  }
+);
+
+// ─── Test Connection ────────────────────────────────────────────────────────
+
+/** POST /api/settings/remediation/test — test the configured provider with a simple prompt */
+settingsRouter.post(
+  "/remediation/test",
+  requireRole("admin"),
+  async (req: AuthenticatedRequest, res) => {
+    const schema = z.object({
+      providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),
+      apiKey: z.string().optional(),
+      model: z.string().optional(),
+      endpoint: z.string().optional(),
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request" });
+    }
+
+    const { providerType, model, endpoint } = parsed.data;
+    let { apiKey } = parsed.data;
+
+    // If no API key provided in request, try to use the saved one
+    if (!apiKey) {
+      const savedRaw = await getSetting("remediation.providerConfig");
+      if (savedRaw) {
+        try {
+          apiKey = JSON.parse(savedRaw).apiKey;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    try {
+      const config: Record<string, unknown> = {};
+      if (apiKey) config.apiKey = apiKey;
+      if (model) config.model = model;
+      await testProvider(providerType, config, endpoint);
+      return res.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(502).json({ success: false, error: msg });
+    }
   }
 );
 

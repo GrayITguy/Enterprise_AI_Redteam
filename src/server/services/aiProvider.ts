@@ -33,6 +33,9 @@ export async function callWithSettingsFallback(
     const remConfig: Record<string, unknown> = remConfigRaw
       ? JSON.parse(remConfigRaw)
       : {};
+    logger.debug(
+      `[AI] Using remediation provider: ${remProviderType}, hasApiKey: ${!!remConfig.apiKey}, model: ${(remConfig.model as string) ?? "(default)"}`
+    );
     return callLLM(
       prompt,
       remProviderType,
@@ -62,13 +65,17 @@ async function callLLM(
   maxTokens: number
 ): Promise<string> {
   const model = (providerConfig.model as string) || "";
+  let lastError: string | undefined;
 
   // 1. Try the specified provider
   try {
     const text = await callProvider(prompt, providerType, targetUrl, providerConfig, model, maxTokens);
     if (text) return text;
+    lastError = `${providerType} provider returned an empty response`;
+    logger.warn(`[AI] ${lastError}`);
   } catch (err) {
-    logger.warn(`[AI] Provider (${providerType}) failed: ${err}`);
+    lastError = err instanceof Error ? err.message : String(err);
+    logger.warn(`[AI] Provider (${providerType}) failed: ${lastError}`);
   }
 
   // 2. Fall back to Anthropic API if configured
@@ -89,11 +96,10 @@ async function callLLM(
     }
   }
 
+  // Surface the actual provider error so the user can diagnose
   throw new Error(
-    "No AI provider available. " +
-      "Configure a provider in Settings → AI Remediation, " +
-      "ensure your project target (e.g., Ollama) is running, " +
-      "or set ANTHROPIC_API_KEY for cloud-based generation."
+    lastError ??
+      "No AI provider available. Configure a provider in Settings → AI Remediation."
   );
 }
 
@@ -140,7 +146,7 @@ async function callProvider(
 
     case "openai": {
       const apiKey = providerConfig.apiKey as string | undefined;
-      if (!apiKey) return null;
+      if (!apiKey) throw new Error("OpenAI API key not configured — save your key in Settings → AI Remediation");
       const base = resolveForHost((targetUrl || "https://api.openai.com").replace(/\/+$/, ""));
       const resp = await fetch(`${base}/v1/chat/completions`, {
         method: "POST",
@@ -164,7 +170,7 @@ async function callProvider(
 
     case "anthropic": {
       const apiKey = providerConfig.apiKey as string | undefined;
-      if (!apiKey) return null;
+      if (!apiKey) throw new Error("Anthropic API key not configured — save your key in Settings → AI Remediation");
       const Anthropic = (await import("@anthropic-ai/sdk")).default;
       const client = new Anthropic({ apiKey });
       const message = await client.messages.create({
@@ -178,7 +184,7 @@ async function callProvider(
 
     case "custom":
     default: {
-      if (!targetUrl) return null;
+      if (!targetUrl) throw new Error("Custom provider endpoint URL not configured");
       const resolvedUrl = resolveForHost(targetUrl);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -211,4 +217,26 @@ async function callProvider(
       );
     }
   }
+}
+
+/**
+ * Test a provider configuration with a minimal prompt.
+ * Throws on failure with a descriptive error message.
+ */
+export async function testProvider(
+  providerType: string,
+  providerConfig: Record<string, unknown>,
+  endpoint?: string
+): Promise<void> {
+  const model = (providerConfig.model as string) || "";
+  const targetUrl = endpoint ?? (providerConfig.endpoint as string) ?? "";
+  const text = await callProvider(
+    "Respond with exactly: OK",
+    providerType,
+    targetUrl,
+    providerConfig,
+    model,
+    32
+  );
+  if (!text) throw new Error(`${providerType} returned an empty response`);
 }
