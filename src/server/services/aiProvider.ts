@@ -161,7 +161,17 @@ async function callProvider(
         }),
         signal: AbortSignal.timeout(120_000),
       });
-      if (!resp.ok) throw new Error(`OpenAI returned ${resp.status}`);
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        let detail = "";
+        try {
+          const parsed = JSON.parse(errBody);
+          detail = parsed?.error?.message ?? errBody;
+        } catch {
+          detail = errBody;
+        }
+        throw new Error(`OpenAI returned ${resp.status}: ${detail}`);
+      }
       const data = (await resp.json()) as {
         choices?: { message?: { content?: string } }[];
       };
@@ -203,7 +213,17 @@ async function callProvider(
         }),
         signal: AbortSignal.timeout(120_000),
       });
-      if (!resp.ok) throw new Error(`Custom endpoint returned ${resp.status}`);
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        let detail = "";
+        try {
+          const parsed = JSON.parse(errBody);
+          detail = parsed?.error?.message ?? errBody;
+        } catch {
+          detail = errBody;
+        }
+        throw new Error(`Custom endpoint returned ${resp.status}: ${detail}`);
+      }
       const data = (await resp.json()) as {
         choices?: { message?: { content?: string } }[];
         message?: { content?: string };
