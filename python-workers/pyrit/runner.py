@@ -86,7 +86,7 @@ def call_target(config, prompt):
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 300
+            "max_completion_tokens": 300
         }).encode()
         req = urllib.request.Request(url, data=payload, method="POST",
                                      headers={"Content-Type": "application/json"})

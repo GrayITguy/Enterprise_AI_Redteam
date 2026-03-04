@@ -209,7 +209,7 @@ async function callProvider(
         body: JSON.stringify({
           model,
           messages: [{ role: "user", content: prompt }],
-          max_tokens: maxTokens,
+          max_completion_tokens: maxTokens,
         }),
         signal: AbortSignal.timeout(120_000),
       });

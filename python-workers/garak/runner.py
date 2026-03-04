@@ -250,7 +250,7 @@ def call_target(target_url, model, provider_type, prompt, provider_config=None):
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200
+            "max_completion_tokens": 200
         }).encode()
         headers = {"Content-Type": "application/json"}
         if api_key:
@@ -270,7 +270,7 @@ def call_target(target_url, model, provider_type, prompt, provider_config=None):
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200
+            "max_completion_tokens": 200
         }).encode()
         req = urllib.request.Request(url, data=payload, method="POST",
                                      headers={"Content-Type": "application/json"})
