@@ -483,6 +483,19 @@ function RemediationSettings() {
     },
   });
 
+  const testMutation = useMutation({
+    mutationFn: () => {
+      const needsApiKey = ["openai", "anthropic", "custom"].includes(providerType);
+      const needsEndpoint = ["ollama", "custom"].includes(providerType);
+      return api.post("/settings/remediation/test", {
+        providerType,
+        ...(needsApiKey && apiKey ? { apiKey } : {}),
+        ...(model ? { model } : {}),
+        ...(needsEndpoint && endpoint ? { endpoint } : {}),
+      });
+    },
+  });
+
   if (isLoading) return null;
 
   const showProviderFields = providerType !== "project";
@@ -654,10 +667,28 @@ function RemediationSettings() {
             <Save className="mr-2 h-4 w-4" />
             {saveMutation.isPending ? "Saving..." : "Save"}
           </Button>
+          {showProviderFields && (
+            <Button
+              variant="outline"
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending}
+            >
+              <Wifi className="mr-2 h-4 w-4" />
+              {testMutation.isPending ? "Testing..." : "Test Connection"}
+            </Button>
+          )}
         </div>
 
         {saveMsg && (
           <p className="text-sm text-green-500">{saveMsg}</p>
+        )}
+        {testMutation.isSuccess && (
+          <p className="text-sm text-green-500">Connection successful — provider is reachable and responding.</p>
+        )}
+        {testMutation.isError && (
+          <p className="text-sm text-destructive">
+            Connection failed: {(testMutation.error as any)?.response?.data?.error ?? "Unknown error"}
+          </p>
         )}
       </CardContent>
     </Card>
