@@ -45,7 +45,8 @@ const pollWaiters: PollWaiter[] = [];
 export function queueRelayRequest(
   ollamaUrl: string,
   path: string,
-  body: unknown
+  body: unknown,
+  timeoutMs = 300_000
 ): Promise<unknown> {
   const requestId = uuid();
   const item: RelayItem = { requestId, ollamaUrl, path, body };
@@ -64,14 +65,16 @@ export function queueRelayRequest(
   return new Promise<unknown>((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (pendingRequests.delete(requestId)) {
+        const secs = Math.round(timeoutMs / 1000);
         reject(
           new Error(
-            "Ollama relay timed out — ensure the EART dashboard is open in " +
-              "your browser while scanning so it can forward requests to your local Ollama."
+            `Ollama relay timed out after ${secs}s — ensure the EART dashboard is open in ` +
+              "your browser so it can forward requests to your local Ollama. " +
+              "If the model is very slow, try a faster model or reduce the number of findings."
           )
         );
       }
-    }, 120_000);
+    }, timeoutMs);
 
     pendingRequests.set(requestId, { resolve, reject, timeout });
   });

@@ -151,10 +151,18 @@ async function callProvider(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ollamaBody),
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(300_000),
         });
-      } catch {
-        // Network error (connection refused, timeout) — fall through to relay.
+      } catch (err) {
+        // Timeout = model IS reachable but slow. Don't fall through to relay.
+        if (err instanceof DOMException && err.name === "TimeoutError") {
+          throw new Error(
+            "Ollama is responding but the request timed out after 5 minutes. " +
+            "This can happen with large prompts on smaller models. " +
+            "Try a faster model or reduce the number of findings."
+          );
+        }
+        // Connection error (ECONNREFUSED, DNS failure) — fall through to relay.
       }
 
       if (directResp !== null) {
@@ -171,7 +179,7 @@ async function callProvider(
       // Use originalUrl (not the Docker-resolved one) so the browser can reach
       // localhost:11434 on the user's machine.
       const { queueRelayRequest } = await import("./ollamaRelay.js");
-      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody)) as {
+      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody, 300_000)) as {
         message?: { content?: string };
       };
       return data.message?.content ?? null;

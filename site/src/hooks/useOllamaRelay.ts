@@ -60,6 +60,7 @@ export function useOllamaRelay(): void {
             const r = await fetch(`${ollamaUrl}${path}`, {
               method: "POST",
               body: JSON.stringify(body),
+              signal: AbortSignal.timeout(330_000), // 5.5 min > backend's 5 min relay timeout
             });
 
             if (!r.ok) {

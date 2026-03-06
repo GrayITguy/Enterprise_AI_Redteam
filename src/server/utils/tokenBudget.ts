@@ -44,6 +44,7 @@ const KNOWN_CONTEXT_WINDOWS: [prefix: string, tokens: number][] = [
   ["phi", 4_096],
   ["gemma2", 8_192],
   ["gemma", 8_192],
+  ["qwen3", 32_768],
   ["qwen2.5", 131_072],
   ["qwen2", 131_072],
   ["qwen", 32_768],
