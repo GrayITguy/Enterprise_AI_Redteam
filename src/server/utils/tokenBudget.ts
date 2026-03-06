@@ -56,15 +56,32 @@ const DEFAULT_CONTEXT_WINDOW = 32_768;
 
 /**
  * Best-effort context-window lookup.
- * Falls back to 32 768 tokens when the model is unknown.
+ * Returns null when the model is unknown — callers can then decide whether to
+ * use a fallback (for budget calculations) or omit the parameter entirely
+ * (for Ollama num_ctx, where omitting lets the model use its own default).
  */
-export function getContextWindow(model: string, _providerType: string): number {
-  if (!model) return DEFAULT_CONTEXT_WINDOW;
+export function getContextWindow(
+  model: string,
+  _providerType: string
+): number | null {
+  if (!model) return null;
   const lower = model.toLowerCase();
   for (const [prefix, size] of KNOWN_CONTEXT_WINDOWS) {
     if (lower.startsWith(prefix)) return size;
   }
-  return DEFAULT_CONTEXT_WINDOW;
+  return null;
+}
+
+/**
+ * Same as getContextWindow but always returns a number, using the default
+ * fallback for unknown models. Use this for token-budget calculations where
+ * a concrete number is always required.
+ */
+export function getContextWindowWithDefault(
+  model: string,
+  providerType: string
+): number {
+  return getContextWindow(model, providerType) ?? DEFAULT_CONTEXT_WINDOW;
 }
 
 export interface TokenBudget {
