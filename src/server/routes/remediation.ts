@@ -7,7 +7,7 @@ import { getPluginById } from "../config/pluginCatalog.js";
 
 import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
-import { estimateTokens, getContextWindow, computeBudget } from "../utils/tokenBudget.js";
+import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
 
 export const remediationRouter = Router();
@@ -102,7 +102,7 @@ remediationRouter.post(
     // Determine the model and context window for budget-aware prompt building
     const model = (providerConfig.model as string) || "";
     const providerType = project?.providerType ?? "ollama";
-    const contextWindow = getContextWindow(model, providerType);
+    const contextWindow = getContextWindowWithDefault(model, providerType);
 
     // Group failures by OWASP category
     const byOwasp = new Map<string, typeof failures>();

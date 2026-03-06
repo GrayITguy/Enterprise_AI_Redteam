@@ -9,7 +9,7 @@
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { getSetting } from "./settingsService.js";
-import { getContextWindow } from "../utils/tokenBudget.js";
+import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
 
 export interface ProjectInfo {
   providerType: string;
@@ -70,7 +70,7 @@ async function callLLM(
   contextWindow?: number
 ): Promise<string> {
   const model = (providerConfig.model as string) || "";
-  const effectiveCtx = contextWindow ?? getContextWindow(model, providerType);
+  const effectiveCtx = contextWindow ?? getContextWindowWithDefault(model, providerType);
   let lastError: string | undefined;
 
   // 1. Try the specified provider
@@ -123,35 +123,55 @@ async function callProvider(
 ): Promise<string | null> {
   switch (providerType) {
     case "ollama": {
-      const url = resolveForHost((targetUrl || "http://localhost:11434").replace(/\/+$/, ""));
+      const originalUrl = (targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const url = resolveForHost(originalUrl);
+
+      // Only set num_ctx when the model is known — for unknown models, let
+      // Ollama use its built-in default.  Forcing 32 768 on a small local
+      // model can exhaust VRAM and cause Ollama to crash (→ "Failed to fetch").
+      const knownCtx = getContextWindow(model || "llama3", "ollama");
+      const ollamaOptions = knownCtx !== null ? { num_ctx: knownCtx } : {};
+
       const ollamaBody = {
         model: model || "llama3",
         messages: [{ role: "user", content: prompt }],
         stream: false,
-        options: { num_ctx: contextWindow },
+        options: ollamaOptions,
       };
 
-      logger.debug(`[AI] Ollama request: model=${ollamaBody.model}, num_ctx=${contextWindow}`);
+      logger.debug(
+        `[AI] Ollama request: model=${ollamaBody.model}` +
+          (knownCtx !== null ? `, num_ctx=${knownCtx}` : ` (num_ctx: Ollama default)`)
+      );
 
-      // Try direct connection first
+      // Try direct connection first (backend → Ollama).
+      let directResp: Response | null = null;
       try {
-        const resp = await fetch(`${url}/api/chat`, {
+        directResp = await fetch(`${url}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ollamaBody),
           signal: AbortSignal.timeout(120_000),
         });
-        if (resp.ok) {
-          const data = (await resp.json()) as { message?: { content?: string } };
-          return data.message?.content ?? null;
-        }
       } catch {
-        // Fall through to browser relay.
+        // Network error (connection refused, timeout) — fall through to relay.
       }
 
-      // Browser relay fallback
+      if (directResp !== null) {
+        if (directResp.ok) {
+          const data = (await directResp.json()) as { message?: { content?: string } };
+          return data.message?.content ?? null;
+        }
+        // Ollama returned an HTTP error — surface it immediately.
+        const errText = await directResp.text().catch(() => "");
+        throw new Error(`Ollama returned HTTP ${directResp.status}: ${errText || "(no body)"}`);
+      }
+
+      // Direct connection failed (network error) — relay through the browser.
+      // Use originalUrl (not the Docker-resolved one) so the browser can reach
+      // localhost:11434 on the user's machine.
       const { queueRelayRequest } = await import("./ollamaRelay.js");
-      const data = (await queueRelayRequest(url, "/api/chat", ollamaBody)) as {
+      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody)) as {
         message?: { content?: string };
       };
       return data.message?.content ?? null;
@@ -291,7 +311,7 @@ export async function testProvider(
 ): Promise<void> {
   const model = (providerConfig.model as string) || "";
   const targetUrl = endpoint ?? (providerConfig.endpoint as string) ?? "";
-  const ctxWindow = getContextWindow(model, providerType);
+  const ctxWindow = getContextWindowWithDefault(model, providerType);
   const text = await callProvider(
     "Respond with exactly: OK",
     providerType,
