@@ -648,7 +648,7 @@ export class ScanOrchestrator {
               messages: [{ role: "user", content: attack.prompt }],
               stream: false,
             }),
-            signal: AbortSignal.timeout(120_000),
+            signal: AbortSignal.timeout(300_000),
           });
 
           if (!resp.ok) {
@@ -765,7 +765,7 @@ export class ScanOrchestrator {
                     stream: false,
                   },
                 }),
-                signal: AbortSignal.timeout(130_000), // relay itself times out at 120 s
+                signal: AbortSignal.timeout(330_000), // relay itself times out at 300 s
               });
               break; // success
             } catch (fetchErr) {
