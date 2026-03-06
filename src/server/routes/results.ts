@@ -4,6 +4,8 @@ import { scanResults, scans, projects } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { callWithSettingsFallback } from "../services/aiProvider.js";
+import { estimateTokens, getContextWindow, computeBudget } from "../utils/tokenBudget.js";
+import { logger } from "../utils/logger.js";
 
 export const resultsRouter = Router();
 resultsRouter.use(requireAuth);
@@ -89,6 +91,11 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
 
   const providerConfig = project ? JSON.parse(project.providerConfig) : {};
 
+  // Determine context window for budget-aware prompt building
+  const model = (providerConfig.model as string) || "";
+  const providerType = project?.providerType ?? "ollama";
+  const contextWindow = getContextWindow(model, providerType);
+
   const results = await db
     .select()
     .from(scanResults)
@@ -104,9 +111,23 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
     low: results.filter((r) => r.severity === "low" && !r.passed).length,
   };
 
-  const topFindings = results
-    .filter((r) => !r.passed && (r.severity === "critical" || r.severity === "high"))
-    .slice(0, 10)
+  // Adaptively limit findings based on available context budget
+  const criticalHighFindings = results
+    .filter((r) => !r.passed && (r.severity === "critical" || r.severity === "high"));
+
+  // Start with up to 10, reduce if context is tight
+  const basePromptTokens = 350; // approximate tokens for template text
+  const tokensPerFinding = 25;  // approximate tokens per finding line
+  const outputTokens = 1024;
+  const safeWindow = Math.floor(contextWindow * 0.9);
+  const availableForFindings = safeWindow - basePromptTokens - outputTokens;
+  const maxFindings = Math.max(
+    3,
+    Math.min(10, Math.floor(availableForFindings / tokensPerFinding))
+  );
+
+  const topFindings = criticalHighFindings
+    .slice(0, maxFindings)
     .map((r) => `- [${r.severity.toUpperCase()}] ${r.testName} (${r.tool}, ${r.owaspCategory ?? "N/A"})`);
 
   const owaspHits = [...new Set(
@@ -129,11 +150,23 @@ ${topFindings.length > 0 ? topFindings.join("\n") : "None"}
 
 Write the summary covering: overall risk posture, most significant vulnerabilities found, potential business impact, and 2-3 prioritized remediation recommendations. Be direct and actionable. Do not use markdown headers — write in flowing paragraphs.`;
 
+  // Compute dynamic max completion tokens
+  const promptTokens = estimateTokens(prompt);
+  const budget = computeBudget(promptTokens, contextWindow);
+  const maxCompletionTokens = Math.min(budget.maxCompletionTokens, 2048);
+
+  logger.debug(
+    `[Narrative] prompt≈${promptTokens}tok, contextWindow=${contextWindow}, ` +
+    `maxCompletion=${maxCompletionTokens}, findings=${topFindings.length}`
+  );
+
   try {
     const projectInfo = project
       ? { providerType: project.providerType, targetUrl: project.targetUrl, providerConfig }
       : null;
-    const narrative = await callWithSettingsFallback(prompt, projectInfo, 1024);
+    const narrative = await callWithSettingsFallback(
+      prompt, projectInfo, maxCompletionTokens, contextWindow
+    );
     return res.json({ narrative });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

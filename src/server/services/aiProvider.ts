@@ -9,6 +9,7 @@
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { getSetting } from "./settingsService.js";
+import { getContextWindow } from "../utils/tokenBudget.js";
 
 export interface ProjectInfo {
   providerType: string;
@@ -23,7 +24,8 @@ export interface ProjectInfo {
 export async function callWithSettingsFallback(
   prompt: string,
   project: ProjectInfo | null,
-  maxTokens = 4096
+  maxTokens = 4096,
+  contextWindow?: number
 ): Promise<string> {
   // 1. Check if admin configured a dedicated remediation provider in settings
   const remProviderType = await getSetting("remediation.providerType");
@@ -41,7 +43,8 @@ export async function callWithSettingsFallback(
       remProviderType,
       (remConfig.endpoint as string) ?? "",
       remConfig,
-      maxTokens
+      maxTokens,
+      contextWindow
     );
   }
 
@@ -51,7 +54,8 @@ export async function callWithSettingsFallback(
     project?.providerType ?? "ollama",
     project?.targetUrl ?? "",
     project?.providerConfig ?? {},
-    maxTokens
+    maxTokens,
+    contextWindow
   );
 }
 
@@ -62,14 +66,16 @@ async function callLLM(
   providerType: string,
   targetUrl: string,
   providerConfig: Record<string, unknown>,
-  maxTokens: number
+  maxTokens: number,
+  contextWindow?: number
 ): Promise<string> {
   const model = (providerConfig.model as string) || "";
+  const effectiveCtx = contextWindow ?? getContextWindow(model, providerType);
   let lastError: string | undefined;
 
   // 1. Try the specified provider
   try {
-    const text = await callProvider(prompt, providerType, targetUrl, providerConfig, model, maxTokens);
+    const text = await callProvider(prompt, providerType, targetUrl, providerConfig, model, maxTokens, effectiveCtx);
     if (text) return text;
     lastError = `${providerType} provider returned an empty response`;
     logger.warn(`[AI] ${lastError}`);
@@ -89,6 +95,9 @@ async function callLLM(
         max_tokens: maxTokens,
         messages: [{ role: "user", content: prompt }],
       });
+      if (message.stop_reason === "max_tokens") {
+        logger.warn("[AI] Anthropic fallback response was truncated (stop_reason=max_tokens)");
+      }
       const block = message.content[0];
       if (block?.type === "text") return block.text;
     } catch (err) {
@@ -109,7 +118,8 @@ async function callProvider(
   targetUrl: string,
   providerConfig: Record<string, unknown>,
   model: string,
-  maxTokens: number
+  maxTokens: number,
+  contextWindow: number
 ): Promise<string | null> {
   switch (providerType) {
     case "ollama": {
@@ -118,7 +128,10 @@ async function callProvider(
         model: model || "llama3",
         messages: [{ role: "user", content: prompt }],
         stream: false,
+        options: { num_ctx: contextWindow },
       };
+
+      logger.debug(`[AI] Ollama request: model=${ollamaBody.model}, num_ctx=${contextWindow}`);
 
       // Try direct connection first
       try {
@@ -173,9 +186,23 @@ async function callProvider(
         throw new Error(`OpenAI returned ${resp.status}: ${detail}`);
       }
       const data = (await resp.json()) as {
-        choices?: { message?: { content?: string } }[];
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      return data.choices?.[0]?.message?.content ?? null;
+
+      const choice = data.choices?.[0];
+      if (choice?.finish_reason === "length") {
+        logger.warn(
+          `[AI] OpenAI response truncated (finish_reason=length). ` +
+          `prompt_tokens=${data.usage?.prompt_tokens}, completion_tokens=${data.usage?.completion_tokens}`
+        );
+        throw new Error(
+          "AI response was truncated — the model ran out of output tokens. " +
+          "Try a model with a larger context window or reduce the number of findings."
+        );
+      }
+
+      return choice?.message?.content ?? null;
     }
 
     case "anthropic": {
@@ -188,6 +215,9 @@ async function callProvider(
         max_tokens: maxTokens,
         messages: [{ role: "user", content: prompt }],
       });
+      if (message.stop_reason === "max_tokens") {
+        logger.warn("[AI] Anthropic response truncated (stop_reason=max_tokens)");
+      }
       const block = message.content[0];
       return block?.type === "text" ? block.text : null;
     }
@@ -225,12 +255,23 @@ async function callProvider(
         throw new Error(`Custom endpoint returned ${resp.status}: ${detail}`);
       }
       const data = (await resp.json()) as {
-        choices?: { message?: { content?: string } }[];
+        choices?: { message?: { content?: string }; finish_reason?: string }[];
         message?: { content?: string };
         response?: string;
       };
+
+      // Check for truncation on OpenAI-compatible custom endpoints
+      const customChoice = data.choices?.[0];
+      if (customChoice?.finish_reason === "length") {
+        logger.warn("[AI] Custom endpoint response truncated (finish_reason=length)");
+        throw new Error(
+          "AI response was truncated — the model ran out of output tokens. " +
+          "Try a model with a larger context window or reduce the number of findings."
+        );
+      }
+
       return (
-        data.choices?.[0]?.message?.content ??
+        customChoice?.message?.content ??
         data.message?.content ??
         data.response ??
         null
@@ -250,13 +291,15 @@ export async function testProvider(
 ): Promise<void> {
   const model = (providerConfig.model as string) || "";
   const targetUrl = endpoint ?? (providerConfig.endpoint as string) ?? "";
+  const ctxWindow = getContextWindow(model, providerType);
   const text = await callProvider(
     "Respond with exactly: OK",
     providerType,
     targetUrl,
     providerConfig,
     model,
-    32
+    32,
+    ctxWindow
   );
   if (!text) throw new Error(`${providerType} returned an empty response`);
 }
