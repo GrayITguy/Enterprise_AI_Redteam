@@ -1,7 +1,69 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
+/* ── Tailwind 4 theme configuration ──────────────────────────────────── */
+@theme {
+  /* Colors */
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-neon-red: #FF1A3C;
+  --color-neon-cyan: #00F0FF;
+
+  /* Fonts */
+  --font-orbitron: 'Orbitron', sans-serif;
+  --font-rajdhani: 'Rajdhani', system-ui, sans-serif;
+
+  /* Box shadows */
+  --shadow-neon-red: 0 0 15px #FF1A3C, 0 0 30px rgba(255, 26, 60, 0.35);
+  --shadow-neon-red-intense: 0 0 20px #FF1A3C, 0 0 50px rgba(255, 26, 60, 0.55), 0 0 80px rgba(255, 26, 60, 0.2);
+  --shadow-neon-cyan: 0 0 15px #00F0FF, 0 0 30px rgba(0, 240, 255, 0.35);
+  --shadow-neon-red-inset: inset 0 0 20px rgba(255, 26, 60, 0.08);
+
+  /* Border radius */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Animations */
+  --animate-neon-pulse: neon-pulse 2.4s ease-in-out infinite;
+  --animate-border-flicker: border-flicker 8s ease-in-out infinite;
+
+  @keyframes neon-pulse {
+    0%, 100% {
+      filter: drop-shadow(0 0 6px #FF1A3C) drop-shadow(0 0 14px rgba(255, 26, 60, 0.6));
+    }
+    50% {
+      filter: drop-shadow(0 0 14px #FF1A3C) drop-shadow(0 0 32px rgba(255, 26, 60, 0.85)) drop-shadow(0 0 56px rgba(255, 26, 60, 0.3));
+    }
+  }
+
+  @keyframes border-flicker {
+    0%, 95%, 100% { opacity: 1; }
+    96%            { opacity: 0.6; }
+    98%            { opacity: 0.85; }
+  }
+}
+
+/* ── Dark mode via class ─────────────────────────────────────────────── */
+@variant dark (&:where(.dark, .dark *));
+
+/* ── CSS variable definitions ────────────────────────────────────────── */
 @layer base {
   :root {
     /* CYBERPUNK RED TEAM — matte black + neon red primary */
@@ -45,16 +107,7 @@
   }
 }
 
-/* ── Keyframe animations ───────────────────────────────────────────────── */
-@keyframes neon-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 6px #FF1A3C) drop-shadow(0 0 14px rgba(255, 26, 60, 0.6));
-  }
-  50% {
-    filter: drop-shadow(0 0 14px #FF1A3C) drop-shadow(0 0 32px rgba(255, 26, 60, 0.85)) drop-shadow(0 0 56px rgba(255, 26, 60, 0.3));
-  }
-}
-
+/* ── Keyframe animations (non-theme) ─────────────────────────────────── */
 @keyframes scanline-sweep {
   0%   { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
@@ -65,13 +118,7 @@
   100% { background-position: 80px 80px; }
 }
 
-@keyframes border-flicker {
-  0%, 95%, 100% { opacity: 1; }
-  96%            { opacity: 0.6; }
-  98%            { opacity: 0.85; }
-}
-
-/* ── Global base styles ────────────────────────────────────────────────── */
+/* ── Global base styles ──────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border;
@@ -109,7 +156,7 @@
   }
 }
 
-/* ── Cyberpunk component utilities ─────────────────────────────────────── */
+/* ── Cyberpunk component utilities ───────────────────────────────────── */
 @layer components {
 
   /* Glassmorphic card with red neon rim */
