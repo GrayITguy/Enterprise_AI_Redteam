@@ -9,22 +9,10 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
+import { OWASP_NAMES } from "../config/constants.js";
 
 export const remediationRouter = Router();
 remediationRouter.use(requireAuth);
-
-const OWASP_NAMES: Record<string, string> = {
-  LLM01: "Prompt Injection",
-  LLM02: "Insecure Output Handling",
-  LLM03: "Training Data Poisoning",
-  LLM04: "Model Denial of Service",
-  LLM05: "Supply Chain Vulnerabilities",
-  LLM06: "Sensitive Information Disclosure",
-  LLM07: "Insecure Plugin Design",
-  LLM08: "Excessive Agency",
-  LLM09: "Overreliance",
-  LLM10: "Model Theft",
-};
 
 // ─── POST /api/remediation/scans/:scanId/generate ────────────────────────────
 // Generates AI-powered remediation guidance for a completed scan's findings.

@@ -11,6 +11,11 @@ import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { getSetting } from "./settingsService.js";
 import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
 
+/** Lazily import the Anthropic SDK (avoids top-level import when unused). */
+async function loadAnthropicSdk() {
+  return (await import("@anthropic-ai/sdk")).default;
+}
+
 export interface ProjectInfo {
   providerType: string;
   targetUrl: string;
@@ -88,7 +93,7 @@ async function callLLM(
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
     try {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const Anthropic = await loadAnthropicSdk();
       const client = new Anthropic({ apiKey: anthropicKey });
       const message = await client.messages.create({
         model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
@@ -236,7 +241,7 @@ async function callProvider(
     case "anthropic": {
       const apiKey = providerConfig.apiKey as string | undefined;
       if (!apiKey) throw new Error("Anthropic API key not configured — save your key in Settings → AI Remediation");
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const Anthropic = await loadAnthropicSdk();
       const client = new Anthropic({ apiKey });
       const message = await client.messages.create({
         model: model || "claude-haiku-4-5-20251001",

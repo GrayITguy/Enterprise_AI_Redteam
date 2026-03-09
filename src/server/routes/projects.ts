@@ -5,14 +5,7 @@ import { db } from "../../db/index.js";
 import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
-
-function safeJsonParse<T>(value: string, fallback: T): T {
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
+import { safeJsonParse } from "../utils/helpers.js";
 
 export const projectsRouter = Router();
 projectsRouter.use(requireAuth);

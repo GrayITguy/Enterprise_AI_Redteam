@@ -14,30 +14,25 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
+import {
+  NEON_RED, NEON_CYAN, NEON_ORANGE,
+  FONT_DISPLAY, FONT_UI,
+  cyberCardStyle, TOOLTIP_STYLE,
+  primaryButtonStyle, PRIMARY_BUTTON_HOVER_SHADOW, PRIMARY_BUTTON_SHADOW,
+} from "@/lib/theme";
 
 /* ── Cyberpunk color palette ─────────────────────────────────────────── */
 const SEVERITY_COLORS = {
-  Critical: "#FF1A3C",
+  Critical: NEON_RED,
   High:     "#FF4D1A",
-  Medium:   "#FF8C1A",
+  Medium:   NEON_ORANGE,
   Low:      "#4ADE80",
 };
 
 const DONUT_COLORS = {
-  Completed: "#00F0FF",
-  Running:   "#FF8C1A",
-  Failed:    "#FF1A3C",
-};
-
-/* ── Cyberpunk tooltip style ─────────────────────────────────────────── */
-const TOOLTIP_STYLE = {
-  backgroundColor: "rgba(10, 0, 3, 0.95)",
-  border: "1px solid rgba(255, 26, 60, 0.4)",
-  borderRadius: "4px",
-  color: "#e5e5e5",
-  fontFamily: "'Rajdhani', sans-serif",
-  fontSize: "13px",
-  boxShadow: "0 0 20px rgba(255,26,60,0.2)",
+  Completed: NEON_CYAN,
+  Running:   NEON_ORANGE,
+  Failed:    NEON_RED,
 };
 
 /* ── Status badge styles ─────────────────────────────────────────────── */
@@ -164,13 +159,7 @@ function CyberCard({ children, className = "" }: { children: React.ReactNode; cl
   return (
     <div
       className={`rounded-lg overflow-hidden ${className}`}
-      style={{
-        background: "rgba(10, 10, 10, 0.9)",
-        backdropFilter: "blur(14px)",
-        WebkitBackdropFilter: "blur(14px)",
-        border: "1px solid rgba(255,26,60,0.2)",
-        boxShadow: "inset 0 0 30px rgba(255,26,60,0.03)",
-      }}
+      style={cyberCardStyle}
     >
       {children}
     </div>
@@ -196,7 +185,7 @@ function CyberCardTitle({ children, icon: Icon }: { children: React.ReactNode; i
       )}
       <span
         className="text-sm font-semibold uppercase tracking-widest"
-        style={{ fontFamily: "'Rajdhani', sans-serif", color: "rgba(255,255,255,0.7)" }}
+        style={{ fontFamily: FONT_UI, color: "rgba(255,255,255,0.7)" }}
       >
         {children}
       </span>
@@ -290,7 +279,7 @@ export default function Dashboard() {
         <div>
           <h1
             className="text-2xl font-bold tracking-widest text-white uppercase"
-            style={{ fontFamily: "'Orbitron', sans-serif", letterSpacing: "0.15em" }}
+            style={{ fontFamily: FONT_DISPLAY, letterSpacing: "0.15em" }}
           >
             Security Dashboard
           </h1>
@@ -305,20 +294,12 @@ export default function Dashboard() {
         <Link to="/scans/new">
           <button
             className="flex items-center gap-2 rounded px-4 py-2 text-white font-bold uppercase tracking-widest text-sm transition-all"
-            style={{
-              background: "#FF1A3C",
-              fontFamily: "'Rajdhani', sans-serif",
-              letterSpacing: "0.12em",
-              boxShadow: "0 0 15px rgba(255,26,60,0.55), 0 0 30px rgba(255,26,60,0.25)",
-              border: "1px solid rgba(255,26,60,0.6)",
-            }}
+            style={primaryButtonStyle}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow =
-                "0 0 22px rgba(255,26,60,0.8), 0 0 50px rgba(255,26,60,0.4)";
+              (e.currentTarget as HTMLElement).style.boxShadow = PRIMARY_BUTTON_HOVER_SHADOW;
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow =
-                "0 0 15px rgba(255,26,60,0.55), 0 0 30px rgba(255,26,60,0.25)";
+              (e.currentTarget as HTMLElement).style.boxShadow = PRIMARY_BUTTON_SHADOW;
             }}
           >
             <Zap className="h-4 w-4" />
