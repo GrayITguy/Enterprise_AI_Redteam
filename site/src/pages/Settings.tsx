@@ -34,7 +34,7 @@ export default function Settings() {
     },
   });
 
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const copyCode = useCallback((code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
