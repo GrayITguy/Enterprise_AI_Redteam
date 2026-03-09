@@ -6,9 +6,9 @@ import { v4 as uuid } from "uuid";
 
 // Mock DockerRunner so tests don't need Docker
 vi.mock("../server/services/dockerRunner.js", () => ({
-  DockerRunner: vi.fn().mockImplementation(() => ({
-    run: vi.fn().mockResolvedValue([]),
-  })),
+  DockerRunner: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+    this.run = vi.fn().mockResolvedValue([]);
+  }),
 }));
 
 // Mock the queue so no Redis connection is attempted
