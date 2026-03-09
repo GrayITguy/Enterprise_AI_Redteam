@@ -163,7 +163,9 @@ enterpriseairedteam/
 │   ├── server/
 │   │   ├── app.ts              # Express entry point
 │   │   ├── config/
-│   │   │   └── pluginCatalog.ts # 41 plugins + presets
+│   │   │   ├── pluginCatalog.ts   # 41 plugins + presets
+│   │   │   ├── attackPatterns.ts  # Adversarial attack library (PLUGIN_ATTACKS)
+│   │   │   └── constants.ts       # Shared backend constants (OWASP_NAMES)
 │   │   ├── middleware/
 │   │   │   ├── auth.ts          # JWT middleware
 │   │   │   └── errorHandler.ts
@@ -183,7 +185,10 @@ enterpriseairedteam/
 │   │   │   ├── scheduler.ts    # Recurring scan scheduler
 │   │   │   └── reportGenerator.ts
 │   │   ├── utils/
-│   │   │   └── resolveEndpoint.ts # Docker-aware URL rewriting
+│   │   │   ├── resolveEndpoint.ts # Docker-aware URL rewriting
+│   │   │   ├── helpers.ts         # Shared utilities (isLocalhostUrl, safeJsonParse)
+│   │   │   ├── tokenBudget.ts     # Token estimation + context-window budget
+│   │   │   └── logger.ts          # Application logger
 │   │   └── workers/
 │   │       └── scanWorker.ts   # BullMQ worker process
 │   ├── db/
@@ -192,6 +197,10 @@ enterpriseairedteam/
 │   └── license-validator.ts    # Offline RSA license check
 ├── site/                       # React frontend (Vite)
 │   └── src/
+│       ├── lib/
+│       │   ├── api.ts              # Axios instance + API helpers
+│       │   ├── constants.ts        # Shared UI constants (SEVERITY_ORDER, SEVERITY_COLORS, OWASP_NAMES)
+│       │   └── utils.ts            # Misc frontend utilities
 │       ├── pages/              # Dashboard, ScanBuilder, Results,
 │       │                       # Remediation, Reports, Settings, …
 │       └── components/
