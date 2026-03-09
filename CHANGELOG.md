@@ -27,6 +27,12 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Ollama chat timeout too short** — The Ollama provider in `aiProvider.ts` used an 8-second timeout, far too short for remediation prompts that can take 30–60 seconds. Increased to 120 seconds to match the OpenAI/custom provider timeouts. Settings model detection timeout also increased from 5 to 10 seconds to handle cold starts.
 - **Progress bar jumps to 100% immediately** — `totalTests` was incremented alongside completed tests, making the ratio always ~100%. Now pre-calculates expected test count from `PLUGIN_ATTACKS` before scanning begins, and tracks a dedicated `progress` column (0-99% during scan, 100% on completion). Docker worker results that exceed the estimate gracefully adjust the total upward.
 
+### Changed
+- **Extracted `PLUGIN_ATTACKS` to `src/server/config/attackPatterns.ts`** — moved the adversarial attack library (~175 entries) and `PLUGIN_DISPLAY` mapping out of `scanner.ts` into a dedicated config file, reducing `scanner.ts` by ~200 lines
+- **Created `src/server/utils/helpers.ts`** — consolidated duplicate `isLocalhostUrl()` (previously copied in both `scanner.ts` and `dockerRunner.ts`) and `safeJsonParse<T>()` (previously inlined in `projects.ts`) into a single shared module
+- **Created `src/server/config/constants.ts`** — unified `OWASP_NAMES` mapping (previously duplicated in `remediation.ts` and `reportGenerator.ts`) into one canonical definition
+- **Created `site/src/lib/constants.ts`** — centralized frontend severity constants (`SEVERITY_ORDER`, `SEVERITY_COLORS`) and `OWASP_NAMES` previously duplicated across `Results.tsx`, `Remediation.tsx`, `ScanBuilder.tsx`, and `Dashboard.tsx`
+
 ---
 
 ## [Previous] — Endpoint Auto-Bridge
