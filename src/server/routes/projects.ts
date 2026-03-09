@@ -15,7 +15,7 @@ const CreateProjectSchema = z.object({
   description: z.string().max(500).optional(),
   targetUrl: z.string().url(),
   providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),
-  providerConfig: z.record(z.unknown()).optional().default({}),
+  providerConfig: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 const UpdateProjectSchema = CreateProjectSchema.partial();
