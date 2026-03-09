@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { logger } from "../utils/logger.js";
+import { isLocalhostUrl } from "../utils/helpers.js";
 
 export interface DockerScanResult {
   testName: string;
@@ -43,16 +44,6 @@ function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
     plugins: rest.plugins,
     tool: rest.tool,
   };
-}
-
-/** Check whether a URL points to the local machine. */
-function isLocalhostUrl(url: string): boolean {
-  try {
-    const { hostname } = new URL(url);
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  } catch {
-    return false;
-  }
 }
 
 export class DockerRunner {

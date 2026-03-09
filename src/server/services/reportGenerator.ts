@@ -6,6 +6,7 @@ import { db } from "../../db/index.js";
 import { scans, scanResults, reports, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../utils/logger.js";
+import { OWASP_NAMES } from "../config/constants.js";
 
 const SEVERITY_COLORS = {
   critical: [220, 38, 38],
@@ -14,19 +15,6 @@ const SEVERITY_COLORS = {
   low: [101, 163, 13],
   info: [59, 130, 246],
 } as const;
-
-const OWASP_NAMES: Record<string, string> = {
-  LLM01: "LLM01 - Prompt Injection",
-  LLM02: "LLM02 - Insecure Output Handling",
-  LLM03: "LLM03 - Training Data Poisoning",
-  LLM04: "LLM04 - Model Denial of Service",
-  LLM05: "LLM05 - Supply Chain Vulnerabilities",
-  LLM06: "LLM06 - Sensitive Information Disclosure",
-  LLM07: "LLM07 - Insecure Plugin Design",
-  LLM08: "LLM08 - Excessive Agency",
-  LLM09: "LLM09 - Overreliance",
-  LLM10: "LLM10 - Model Theft",
-};
 
 export class ReportGenerator {
   private reportDir: string;
