@@ -9,6 +9,7 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { isLocalhostUrl } from "../utils/helpers.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
+import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
 // Our plugin IDs → promptfoo display names
 const PLUGIN_DISPLAY: Record<string, string> = {
@@ -480,7 +481,7 @@ export class ScanOrchestrator {
               messages: [{ role: "user", content: attack.prompt }],
               stream: false,
             }),
-            signal: AbortSignal.timeout(300_000),
+            signal: AbortSignal.timeout(getOllamaTimeoutMs()),
           });
 
           if (!resp.ok) {
@@ -597,7 +598,7 @@ export class ScanOrchestrator {
                     stream: false,
                   },
                 }),
-                signal: AbortSignal.timeout(330_000), // relay itself times out at 300 s
+                signal: AbortSignal.timeout(getOllamaTimeoutMs() + 30_000), // slightly longer than relay timeout
               });
               break; // success
             } catch (fetchErr) {

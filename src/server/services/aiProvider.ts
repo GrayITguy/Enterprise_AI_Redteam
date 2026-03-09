@@ -10,6 +10,7 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { getSetting } from "./settingsService.js";
 import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
+import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
 /** Lazily import the Anthropic SDK (avoids top-level import when unused). */
 async function loadAnthropicSdk() {
@@ -150,21 +151,23 @@ async function callProvider(
       );
 
       // Try direct connection first (backend → Ollama).
+      const timeoutMs = getOllamaTimeoutMs();
       let directResp: Response | null = null;
       try {
         directResp = await fetch(`${url}/api/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(ollamaBody),
-          signal: AbortSignal.timeout(300_000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch (err) {
         // Timeout = model IS reachable but slow. Don't fall through to relay.
         if (err instanceof DOMException && err.name === "TimeoutError") {
+          const mins = Math.round(timeoutMs / 60_000);
           throw new Error(
-            "Ollama is responding but the request timed out after 5 minutes. " +
+            `Ollama is responding but the request timed out after ${mins} minutes. ` +
             "This can happen with large prompts on smaller models. " +
-            "Try a faster model or reduce the number of findings."
+            "Try a faster model, reduce the number of findings, or increase OLLAMA_TIMEOUT."
           );
         }
         // Connection error (ECONNREFUSED, DNS failure) — fall through to relay.
@@ -184,7 +187,7 @@ async function callProvider(
       // Use originalUrl (not the Docker-resolved one) so the browser can reach
       // localhost:11434 on the user's machine.
       const { queueRelayRequest } = await import("./ollamaRelay.js");
-      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody, 300_000)) as {
+      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody, timeoutMs)) as {
         message?: { content?: string };
       };
       return data.message?.content ?? null;

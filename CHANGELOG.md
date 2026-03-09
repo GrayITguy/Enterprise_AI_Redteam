@@ -6,6 +6,13 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [Unreleased] — Configurable Ollama Timeout
+
+### Changed
+- **Ollama timeout increased from 5 minutes to 15 minutes and made configurable** — All Ollama request timeouts (remediation, relay, scan attacks, endpoint gateway) now use a shared `OLLAMA_TIMEOUT` environment variable (value in seconds, default 900 = 15 minutes). Smaller/slower local models like `qwen3:4b` no longer time out during remediation plan generation. Error messages now display the actual configured timeout and mention the env var. Set `OLLAMA_TIMEOUT` in `.env` to tune for your hardware.
+
+---
+
 ## [Unreleased] — Full Dependency Upgrade
 
 ### Changed
