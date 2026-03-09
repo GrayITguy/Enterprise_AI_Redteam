@@ -497,6 +497,15 @@ export class ScanOrchestrator {
       return this.runOllamaAttacksViaRelay(config, onResult);
     }
 
+    // ── Custom / OpenAI-compatible: call endpoint directly ────────────────
+    // Bypass promptfoo's HTTP provider which uses a single hardcoded
+    // transformResponse path (json.choices[0].message.content) and silently
+    // returns undefined when the response structure differs.  Direct calls
+    // give us multiple fallback extraction paths and proper error handling.
+    if (config.providerType === "custom" || !["openai", "anthropic", "azure-openai"].includes(config.providerType)) {
+      return this.runCustomEndpointAttacksDirect(config, onResult);
+    }
+
     const provider = this.buildProvider(config);
 
     for (const pluginId of config.plugins) {
@@ -543,7 +552,18 @@ export class ScanOrchestrator {
 
           for (const r of summary?.results ?? []) {
             const responseText = r.response?.output != null ? String(r.response.output) : r.error ?? null;
-            const passed = r.success === true && !r.error;
+
+            // Detect empty/null responses — these indicate a provider
+            // communication failure, not a genuine "pass"
+            const isEmpty = responseText == null || responseText.trim() === "" || responseText === "undefined" || responseText === "null";
+            if (isEmpty) {
+              logger.warn(
+                `[Scanner][promptfoo] Empty response for plugin ${pfId} — ` +
+                `recording as error (raw output: ${JSON.stringify(r.response?.output)})`
+              );
+            }
+
+            const passed = !isEmpty && r.success === true && !r.error;
 
             await onResult({
               tool: "promptfoo",
@@ -552,14 +572,16 @@ export class ScanOrchestrator {
               testName: `[promptfoo] ${pfId}`,
               owaspCategory: this.getOwasp(pluginId),
               prompt: attack.prompt,
-              response: responseText,
+              response: isEmpty ? null : responseText,
               passed,
               evidence: JSON.stringify({
                 pluginId,
                 failPattern: attack.failPattern.toString(),
                 latencyMs: r.latencyMs ?? 0,
                 gradingResult: r.gradingResult ?? null,
-                error: r.error ?? null,
+                error: isEmpty
+                  ? `Empty response from provider (raw: ${JSON.stringify(r.response?.output)})`
+                  : r.error ?? null,
               }),
             });
           }
@@ -820,6 +842,134 @@ export class ScanOrchestrator {
             response: null,
             passed: false,
             evidence: JSON.stringify({ error: String(err), pluginId, relay: true }),
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Run promptfoo plugin attacks directly against a custom/OpenAI-compatible endpoint.
+   *
+   * Instead of relying on promptfoo's HTTP provider (which uses a single
+   * hardcoded `transformResponse` path that silently returns undefined on
+   * non-standard response shapes), we call the endpoint directly and extract
+   * the response with multiple fallback paths — matching the logic in
+   * `aiProvider.ts` that already works for remediation and settings tests.
+   */
+  private async runCustomEndpointAttacksDirect(
+    config: {
+      plugins: string[];
+      targetUrl: string;
+      providerConfig: Record<string, unknown>;
+      model?: string;
+    },
+    onResult: ResultCallback
+  ): Promise<void> {
+    const targetUrl = resolveForHost(config.targetUrl);
+    const model =
+      (config.providerConfig.model as string | undefined) ?? config.model ?? "gpt-4o-mini";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(config.providerConfig.headers as Record<string, string> | undefined),
+    };
+    const apiKey = config.providerConfig.apiKey as string | undefined;
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
+    logger.info(`[Scanner][custom-direct] Running attacks directly → ${targetUrl}`);
+
+    for (const pluginId of config.plugins) {
+      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+      const attacks = PLUGIN_ATTACKS[pfId];
+
+      if (!attacks || attacks.length === 0) {
+        await onResult({
+          tool: "promptfoo",
+          category: pfId,
+          severity: this.getSeverity(pluginId),
+          testName: `[promptfoo] ${pfId}`,
+          owaspCategory: this.getOwasp(pluginId),
+          prompt: `(no attack tests defined for ${pfId})`,
+          response: null,
+          passed: true,
+          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
+        });
+        continue;
+      }
+
+      for (const attack of attacks) {
+        const start = Date.now();
+        try {
+          const resp = await fetch(targetUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model,
+              messages: [{ role: "user", content: attack.prompt }],
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+
+          if (!resp.ok) {
+            const errBody = await resp.text().catch(() => "");
+            throw new Error(`Custom endpoint returned HTTP ${resp.status}: ${errBody}`);
+          }
+
+          const data = (await resp.json()) as {
+            choices?: { message?: { content?: string }; text?: string }[];
+            message?: { content?: string };
+            response?: string;
+            output?: string;
+          };
+
+          // Extract response with multiple fallback paths (matches aiProvider.ts)
+          const responseText =
+            data.choices?.[0]?.message?.content ??
+            data.choices?.[0]?.text ??
+            data.message?.content ??
+            data.response ??
+            data.output ??
+            "";
+
+          if (!responseText) {
+            logger.warn(
+              `[Scanner][custom-direct] Empty response for plugin ${pfId} — ` +
+              `response structure: ${JSON.stringify(data).slice(0, 300)}`
+            );
+          }
+
+          const passed = responseText ? !attack.failPattern.test(responseText) : false;
+          const latencyMs = Date.now() - start;
+
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: responseText || null,
+            passed,
+            evidence: JSON.stringify({
+              pluginId,
+              failPattern: attack.failPattern.toString(),
+              latencyMs,
+              direct: true,
+              ...(responseText ? {} : { emptyResponse: true, rawStructure: JSON.stringify(data).slice(0, 300) }),
+            }),
+          });
+        } catch (err) {
+          logger.error(`[Scanner][custom-direct] Error for plugin ${pfId}: ${err}`);
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: null,
+            passed: false,
+            evidence: JSON.stringify({ error: String(err), pluginId, direct: true }),
           });
         }
       }
