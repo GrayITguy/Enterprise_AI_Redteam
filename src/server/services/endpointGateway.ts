@@ -1,6 +1,7 @@
 import http from "node:http";
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
+import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
 /**
  * Endpoint Auto-Bridge — lightweight HTTP reverse proxy.
@@ -131,7 +132,7 @@ export class EndpointGateway {
         ...clientReq.headers,
         host: parsed.host,
       },
-      timeout: 120_000,
+      timeout: Math.max(120_000, getOllamaTimeoutMs()),
     };
 
     const proxyReq = http.request(options, (proxyRes) => {
@@ -153,7 +154,8 @@ export class EndpointGateway {
     });
 
     proxyReq.on("timeout", () => {
-      proxyReq.destroy(new Error("Gateway proxy request timed out (120s)"));
+      const secs = Math.round(Math.max(120_000, getOllamaTimeoutMs()) / 1000);
+      proxyReq.destroy(new Error(`Gateway proxy request timed out (${secs}s)`));
     });
 
     clientReq.pipe(proxyReq, { end: true });

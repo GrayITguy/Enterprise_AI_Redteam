@@ -1,5 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { logger } from "../utils/logger.js";
+import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ export function queueRelayRequest(
   ollamaUrl: string,
   path: string,
   body: unknown,
-  timeoutMs = 300_000
+  timeoutMs = getOllamaTimeoutMs()
 ): Promise<unknown> {
   const requestId = uuid();
   const item: RelayItem = { requestId, ollamaUrl, path, body };
