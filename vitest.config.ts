@@ -25,8 +25,6 @@ export default defineConfig({
     },
     // Run tests serially to avoid SQLite file conflicts
     pool: "forks",
-    poolOptions: {
-      forks: { singleFork: true },
-    },
+    maxWorkers: 1,
   },
 });
