@@ -6,6 +6,17 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [Unreleased] — Full Dependency Upgrade
+
+### Changed
+- **Backend dependencies upgraded to latest majors**: Express 4→5, Zod 3→4, Drizzle ORM 0.38→0.45, better-sqlite3 11→12, bcryptjs 2→3, node-cron 3→4, nodemailer 7→8, uuid 11→13, Vitest 2→4, plus minor bumps for bullmq, ioredis, winston, cors, helmet, jsonwebtoken, @anthropic-ai/sdk, pdfkit, promptfoo, tsx, typescript
+- **Frontend dependencies upgraded to latest majors**: React 18→19, React Router 6→7, Tailwind CSS 3→4, Vite 6→7, Recharts 2→3, tailwind-merge 2→3, lucide-react 0.475→0.577, jsdom 25→28, plus minor bumps for @tanstack/react-query, axios, clsx, date-fns, zustand, @testing-library/*
+- **Tailwind CSS 4 migration**: replaced JS config with CSS `@theme` directives, switched from PostCSS plugin to `@tailwindcss/vite`, removed autoprefixer (bundled in Tailwind 4)
+- **Express 5 migration**: updated `AuthenticatedRequest` params type, modernized error handler to `ErrorRequestHandler`
+- **Removed `@types/uuid`** (uuid v13 ships its own types)
+
+---
+
 ## [Unreleased] — Settings, Remediation Config & Progress Bar
 
 ### Added
