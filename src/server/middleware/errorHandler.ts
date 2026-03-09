@@ -1,12 +1,7 @@
-import type { Request, Response, NextFunction } from "express";
+import type { ErrorRequestHandler } from "express";
 import { logger } from "../utils/logger.js";
 
-export function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-): void {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   logger.error(`Unhandled error on ${req.method} ${req.path}: ${err.message}`, {
     stack: err.stack,
   });
