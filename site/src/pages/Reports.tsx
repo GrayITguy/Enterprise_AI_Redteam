@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { FileText, Download, Clock, AlertCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
+import { downloadFile } from "@/lib/downloadFile";
 
 export default function Reports() {
   const { data: scans = [] } = useQuery({
@@ -20,7 +21,10 @@ export default function Reports() {
     try {
       setReportError(null);
       const res = await api.post(`/reports/${scanId}/generate`, { format });
-      window.open(`/api/reports/${scanId}/download/${res.data.reportId}`, "_blank");
+      await downloadFile(
+        `/reports/${scanId}/download/${res.data.reportId}`,
+        `eart-report-${scanId.slice(0, 8)}.${format}`
+      );
     } catch (err: any) {
       setReportError(err?.response?.data?.error ?? `Failed to generate ${format.toUpperCase()} report`);
     }

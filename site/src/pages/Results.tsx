@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { downloadFile } from "@/lib/downloadFile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,9 +98,12 @@ export default function Results() {
   const reportMutation = useMutation({
     mutationFn: () =>
       api.post(`/reports/${scanId}/generate`, { format: "pdf" }),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       const { reportId } = res.data;
-      window.open(`/api/reports/${scanId}/download/${reportId}`, "_blank");
+      await downloadFile(
+        `/reports/${scanId}/download/${reportId}`,
+        `eart-report-${scanId!.slice(0, 8)}.pdf`
+      );
     },
   });
 
