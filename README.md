@@ -23,6 +23,7 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 - **Reports** — generate and download PDF or JSON reports per scan
 - **License Management** — free tier included; activate a commercial license key for unlimited concurrent scans
 - **Team Access** — JWT-based auth with admin / analyst / viewer roles and invite-code registration
+<img width="1631" height="791" alt="image" src="https://github.com/user-attachments/assets/c98fea31-9d4a-4346-93c2-4ef0bdd48bb1" />
 
 ---
 
