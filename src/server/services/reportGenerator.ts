@@ -135,14 +135,19 @@ export class ReportGenerator {
         const statusColor = !tested ? "#9ca3af" : owasp.failed === 0 ? "#16a34a" : "#dc2626";
         const statusText = !tested ? "Not Tested" : owasp.failed === 0 ? "PASS" : `${owasp.failed} FAIL`;
 
+        const rowY = doc.y;
         doc
           .fillColor("#374151")
           .fontSize(10)
           .font("Helvetica")
-          .text(owasp.name, { continued: true })
+          .text(owasp.name, 50, rowY, { width: 350 });
+        doc
           .fillColor(statusColor)
-          .text(` — ${statusText}`, { align: "right" });
-        doc.moveDown(0.3);
+          .fontSize(10)
+          .font("Helvetica-Bold")
+          .text(statusText, 400, rowY, { width: 145, align: "right" });
+        doc.x = 50;
+        doc.y = rowY + 16;
       }
 
       doc.moveDown(1);
@@ -153,6 +158,7 @@ export class ReportGenerator {
         .slice(0, 20);
 
       if (criticalHighFindings.length > 0) {
+        doc.x = 50; // Ensure left margin after OWASP section
         doc
           .fillColor("#0f172a")
           .fontSize(16)
@@ -303,5 +309,6 @@ export class ReportGenerator {
 
     doc.moveDown(0.5);
     doc.y = tableY + 35;
+    doc.x = 50; // Reset to left margin
   }
 }
