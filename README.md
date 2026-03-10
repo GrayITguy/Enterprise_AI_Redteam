@@ -35,7 +35,7 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 ### One-command install (Linux / macOS)
 
 ```bash
-git clone https://github.com/yourusername/enterpriseairedteam.git
+git clone https://github.com/grayitguy/enterpriseairedteam.git
 cd enterpriseairedteam
 bash scripts/install.sh
 ```
