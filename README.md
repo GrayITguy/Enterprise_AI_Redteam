@@ -26,6 +26,7 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 <img width="815" height="395" alt="image" src="https://github.com/user-attachments/assets/c98fea31-9d4a-4346-93c2-4ef0bdd48bb1" />
 <img width="812" height="370" alt="image" src="https://github.com/user-attachments/assets/9e79717f-41d8-4262-9be7-ede11e7b25e4" />
 <img width="816" height="394" alt="image" src="https://github.com/user-attachments/assets/b88b614a-747f-48d6-b7f4-b22f453896e3" />
+<img width="815" height="391" alt="image" src="https://github.com/user-attachments/assets/1b0ed29b-f58f-43c8-9523-a8be403fa0ab" />
 
 
 
