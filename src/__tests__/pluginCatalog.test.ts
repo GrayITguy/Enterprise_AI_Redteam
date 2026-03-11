@@ -8,8 +8,8 @@ import {
 } from "../server/config/pluginCatalog.js";
 
 describe("PLUGINS catalog", () => {
-  it("contains exactly 41 plugins", () => {
-    expect(PLUGINS).toHaveLength(41);
+  it("contains exactly 60 plugins", () => {
+    expect(PLUGINS).toHaveLength(60);
   });
 
   it("all plugin IDs are unique", () => {
@@ -37,14 +37,14 @@ describe("PLUGINS catalog", () => {
 
   it("IDs follow the tool:slug pattern", () => {
     for (const plugin of PLUGINS) {
-      expect(plugin.id).toMatch(/^[a-z-]+:[a-z0-9-]+$/);
+      expect(plugin.id).toMatch(/^[a-z-]+:[a-z0-9:-]+$/);
     }
   });
 });
 
 describe("PRESETS", () => {
-  it("quick preset has exactly 8 plugins", () => {
-    expect(PRESETS.quick.plugins).toHaveLength(8);
+  it("quick preset has exactly 10 plugins", () => {
+    expect(PRESETS.quick.plugins).toHaveLength(10);
   });
 
   it("owasp preset covers all 10 OWASP categories", () => {
@@ -58,8 +58,8 @@ describe("PRESETS", () => {
     expect(covered.size).toBeGreaterThanOrEqual(6);
   });
 
-  it("full preset contains all 41 plugins", () => {
-    expect(PRESETS.full.plugins).toHaveLength(41);
+  it("full preset contains all 60 plugins", () => {
+    expect(PRESETS.full.plugins).toHaveLength(60);
   });
 
   it("preset plugin IDs all exist in the catalog", () => {
@@ -136,12 +136,12 @@ describe("getPluginsByTool()", () => {
     expect(result.every((p) => p.tool === "deepteam")).toBe(true);
   });
 
-  it("all 4 tools together account for all 41 plugins", () => {
+  it("all 4 tools together account for all 60 plugins", () => {
     const total =
       getPluginsByTool("promptfoo").length +
       getPluginsByTool("garak").length +
       getPluginsByTool("pyrit").length +
       getPluginsByTool("deepteam").length;
-    expect(total).toBe(41);
+    expect(total).toBe(60);
   });
 });

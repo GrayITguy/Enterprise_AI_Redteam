@@ -55,7 +55,7 @@ describe("Scans API", () => {
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.plugins)).toBe(true);
-      expect(res.body.plugins.length).toBe(41);
+      expect(res.body.plugins.length).toBe(60);
       expect(res.body.presets).toBeDefined();
       expect(res.body.presets.quick).toBeDefined();
       expect(res.body.presets.owasp).toBeDefined();
@@ -75,7 +75,7 @@ describe("Scans API", () => {
       expect(res.body.status).toBe("pending");
       expect(res.body.preset).toBe("quick");
       expect(Array.isArray(res.body.plugins)).toBe(true);
-      expect(res.body.plugins.length).toBe(8);
+      expect(res.body.plugins.length).toBe(10);
     });
 
     it("creates a scan with custom plugin list", async () => {

@@ -6,6 +6,24 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [Unreleased] — Expanded OSS Tool Coverage (41 → 60 plugins)
+
+### Added
+- **19 new vulnerability plugins** across all 4 OSS tools, expanding coverage from 41 to 60 tests:
+  - **Promptfoo** (15 → 21): SSRF, Excessive Agency, Competitor Endorsement, Brand Imitation, Misinformation/Disinformation, Copyright Violations
+  - **Garak** (12 → 17): RealToxicityPrompts, Package Hallucination, Do-Not-Answer Compliance, Language Model Risk Cards, Emotional Manipulation (Grandma)
+  - **PyRIT** (6 → 9): Tree of Attacks with Pruning (TAP), Cross-Domain Prompt Injection (XPIA), FlipAttack Encoding Bypass
+  - **DeepTeam** (8 → 13): Political Bias, Religion Bias, Input Hijacking, PII Session Leakage, Health Misinformation
+
+### Changed
+- **Garak version bumped** from `>=0.9.0` to `>=0.14.0` (latest: 0.14.0, Feb 2026)
+- **PyRIT version bumped** from `>=0.4.0` to `>=0.11.0` (latest: 0.11.0, Feb 2026)
+- **Quick Scan preset** expanded from 8 to 10 plugins (added Excessive Agency, RealToxicityPrompts)
+- **OWASP preset** expanded with additional coverage for LLM02, LLM08, LLM09, LLM10
+- **Full Enterprise Scan** auto-expands to all 60 plugins
+
+---
+
 ## [Unreleased] — Configurable Ollama Timeout
 
 ### Changed
