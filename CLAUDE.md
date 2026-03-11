@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-EART is a self-hosted AI security testing dashboard that consolidates multiple red-teaming tools (Promptfoo, Garak, PyRIT, DeepTeam) into a single web interface. It provides 41 vulnerability tests covering OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more.
+EART is a self-hosted AI security testing dashboard that consolidates multiple red-teaming tools (Promptfoo, Garak, PyRIT, DeepTeam) into a single web interface. It provides 60 vulnerability tests covering OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more.
 
 ## Tech Stack
 
@@ -26,7 +26,7 @@ EART is a self-hosted AI security testing dashboard that consolidates multiple r
 │   │   └── schema.ts           # Drizzle table definitions
 │   ├── server/
 │   │   ├── config/
-│   │   │   └── pluginCatalog.ts  # 41-plugin vulnerability catalog
+│   │   │   └── pluginCatalog.ts  # 60-plugin vulnerability catalog
 │   │   ├── routes/             # Express route handlers
 │   │   ├── services/
 │   │   │   └── scheduler.ts    # Recurring scan orchestration

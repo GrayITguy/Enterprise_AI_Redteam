@@ -7,14 +7,14 @@ Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://gi
 - **Self-hosted** — your data never leaves your infrastructure
 - **Air-gapped ready** — works with Ollama, no mandatory cloud
 - **One command install** — `bash scripts/install.sh` handles everything
-- **41 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
+- **60 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
 
 ---
 
 ## Features
 
 - **Dashboard** — severity charts, pass-rate trend (last 30 scans), upcoming scans widget, and a notification badge showing newly completed scans
-- **Scan Builder** — 41-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins; pre-flight connectivity check with green/amber/red status
+- **Scan Builder** — 60-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins; pre-flight connectivity check with green/amber/red status
 - **Scan Scheduler** — schedule one-off or recurring scans (daily / weekly / monthly) with email notifications (always / failure-only / never)
 - **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and an AI-powered executive summary
 - **Remediation Engine** — AI-generated remediation plans with risk scoring (0–100), root-cause analysis per OWASP category, copy-pasteable system-prompt hardening, guardrail configs, and one-click verification re-scans — works fully offline via local Ollama
@@ -169,7 +169,7 @@ enterpriseairedteam/
 │   ├── server/
 │   │   ├── app.ts              # Express entry point
 │   │   ├── config/
-│   │   │   ├── pluginCatalog.ts   # 41 plugins + presets
+│   │   │   ├── pluginCatalog.ts   # 60 plugins + presets
 │   │   │   ├── attackPatterns.ts  # Adversarial attack library (PLUGIN_ATTACKS)
 │   │   │   └── constants.ts       # Shared backend constants (OWASP_NAMES)
 │   │   ├── middleware/
