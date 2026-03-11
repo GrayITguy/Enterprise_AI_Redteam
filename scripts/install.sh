@@ -97,7 +97,7 @@ build_images() {
   echo "   Subsequent runs use the Docker layer cache and complete in seconds."
   echo ""
 
-  if ! docker compose build; then
+  if ! docker compose build --no-cache; then
     fail "Docker image build failed. Check the output above for details."
   fi
   ok "All images built successfully"

@@ -19,6 +19,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 WORKDIR /app
 
 COPY requirements.txt .
+# Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY runner.py .
