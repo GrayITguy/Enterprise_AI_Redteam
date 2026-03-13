@@ -12,7 +12,7 @@ import {
 } from "../services/settingsService.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse } from "../utils/helpers.js";
 import { testProvider } from "../services/aiProvider.js";
 
 export const settingsRouter = Router();
@@ -109,8 +109,8 @@ settingsRouter.get(
   async (_req: AuthenticatedRequest, res) => {
     const s = await getSettings("remediation.");
     const config = s["remediation.providerConfig"]
-      ? JSON.parse(s["remediation.providerConfig"])
-      : {};
+      ? safeJsonParse<Record<string, unknown>>(s["remediation.providerConfig"], {})
+      : {} as Record<string, unknown>;
 
     // Redact API key in response
     if (config.apiKey) {
@@ -182,7 +182,7 @@ settingsRouter.put(
           // Only carry over old API key if provider type hasn't changed
           const existing = await getSetting("remediation.providerConfig");
           if (existing) {
-            const old = JSON.parse(existing);
+            const old = safeJsonParse<Record<string, string>>(existing, {});
             if (old.apiKey) cleanConfig.apiKey = old.apiKey;
           }
         }

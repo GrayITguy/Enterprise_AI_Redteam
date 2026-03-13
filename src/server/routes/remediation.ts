@@ -9,7 +9,7 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 
 export const remediationRouter = Router();
@@ -64,7 +64,7 @@ remediationRouter.post(
       .get();
 
     const providerConfig = project
-      ? JSON.parse(project.providerConfig)
+      ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {})
       : {};
     const systemPrompt = (providerConfig.systemPrompt as string) || "(none configured)";
 
@@ -215,7 +215,7 @@ remediationRouter.post(
     }
 
     // Map failed results back to plugin IDs
-    const originalPlugins: string[] = JSON.parse(scan.plugins);
+    const originalPlugins: string[] = safeJsonParse(scan.plugins, []);
     const failedTools = new Set(failedResults.map((r) => r.tool));
     const failedCategories = new Set(failedResults.map((r) => r.category));
 

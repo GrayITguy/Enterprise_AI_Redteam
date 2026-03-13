@@ -6,7 +6,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse } from "../utils/helpers.js";
 
 export const resultsRouter = Router();
 resultsRouter.use(requireAuth);
@@ -90,7 +90,7 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
     .where(eq(projects.id, scan.projectId))
     .get();
 
-  const providerConfig = project ? JSON.parse(project.providerConfig) : {};
+  const providerConfig = project ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {}) : {};
 
   // Determine context window for budget-aware prompt building
   const model = (providerConfig.model as string) || "";

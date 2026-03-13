@@ -7,6 +7,7 @@ import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
+import { safeJsonParse } from "../utils/helpers.js";
 
 export const scansRouter = Router();
 scansRouter.use(requireAuth);
@@ -135,7 +136,7 @@ scansRouter.get("/", async (req: AuthenticatedRequest, res) => {
   return res.json(
     rows.map((s) => ({
       ...s,
-      plugins: JSON.parse(s.plugins),
+      plugins: safeJsonParse(s.plugins, []),
     }))
   );
 });
@@ -242,7 +243,7 @@ scansRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
 
   return res.json({
     ...scan,
-    plugins: JSON.parse(scan.plugins),
+    plugins: safeJsonParse(scan.plugins, []),
   });
 });
 
@@ -269,7 +270,7 @@ scansRouter.get("/:id/results", async (req: AuthenticatedRequest, res) => {
   return res.json(
     results.map((r) => ({
       ...r,
-      evidence: JSON.parse(r.evidence),
+      evidence: safeJsonParse(r.evidence, {}),
     }))
   );
 });

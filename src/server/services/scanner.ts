@@ -7,7 +7,7 @@ import { DockerRunner } from "./dockerRunner.js";
 import { gateway } from "./endpointGateway.js";
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
-import { isLocalhostUrl, errorMessage, resolveOllamaUrl } from "../utils/helpers.js";
+import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
@@ -84,7 +84,7 @@ export class ScanOrchestrator {
         .get();
       if (!project) throw new Error(`Project ${scan.projectId} not found`);
 
-      const pluginIds: string[] = JSON.parse(scan.plugins);
+      const pluginIds: string[] = safeJsonParse(scan.plugins, []);
       const plugins = resolvePlugins(pluginIds);
       if (plugins.length === 0) throw new Error("No valid plugins found for this scan");
 
@@ -99,7 +99,7 @@ export class ScanOrchestrator {
       );
 
       const tools = Object.keys(byTool) as PluginTool[];
-      const providerConfig = JSON.parse(project.providerConfig) as Record<string, unknown>;
+      const providerConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
 
       let completedTools = 0;
       let passedTests = 0;

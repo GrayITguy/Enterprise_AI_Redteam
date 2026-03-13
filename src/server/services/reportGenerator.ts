@@ -8,6 +8,7 @@ import { scans, scanResults, reports, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../utils/logger.js";
 import { OWASP_NAMES } from "../config/constants.js";
+import { safeJsonParse } from "../utils/helpers.js";
 
 const SEVERITY_COLORS = {
   critical: [220, 38, 38],
@@ -245,9 +246,9 @@ export class ReportGenerator {
     const payload = {
       scan: {
         ...scan,
-        plugins: JSON.parse(scan.plugins),
+        plugins: safeJsonParse(scan.plugins, []),
       },
-      results: results.map((r) => ({ ...r, evidence: JSON.parse(r.evidence) })),
+      results: results.map((r) => ({ ...r, evidence: safeJsonParse(r.evidence, {}) })),
       summary: {
         total: results.length,
         passed: results.filter((r) => r.passed).length,

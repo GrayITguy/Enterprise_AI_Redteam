@@ -8,7 +8,7 @@
  */
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
-import { resolveOllamaUrl, errorMessage } from "../utils/helpers.js";
+import { resolveOllamaUrl, errorMessage, safeJsonParse } from "../utils/helpers.js";
 import { getSetting } from "./settingsService.js";
 import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
@@ -40,7 +40,7 @@ export async function callWithSettingsFallback(
   if (remProviderType && remProviderType !== "project") {
     const remConfigRaw = await getSetting("remediation.providerConfig");
     const remConfig: Record<string, unknown> = remConfigRaw
-      ? JSON.parse(remConfigRaw)
+      ? safeJsonParse<Record<string, unknown>>(remConfigRaw, {})
       : {};
     logger.debug(
       `[AI] Using remediation provider: ${remProviderType}, hasApiKey: ${!!remConfig.apiKey}, model: ${(remConfig.model as string) ?? "(default)"}`
@@ -67,6 +67,17 @@ export async function callWithSettingsFallback(
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
+
+/** Extract a human-readable detail from an HTTP error response body. */
+async function parseHttpErrorDetail(resp: Response): Promise<string> {
+  const body = await resp.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(body);
+    return parsed?.error?.message ?? body;
+  } catch {
+    return body;
+  }
+}
 
 async function callLLM(
   prompt: string,
@@ -212,14 +223,7 @@ async function callProvider(
         signal: AbortSignal.timeout(120_000),
       });
       if (!resp.ok) {
-        const errBody = await resp.text().catch(() => "");
-        let detail = "";
-        try {
-          const parsed = JSON.parse(errBody);
-          detail = parsed?.error?.message ?? errBody;
-        } catch {
-          detail = errBody;
-        }
+        const detail = await parseHttpErrorDetail(resp);
         throw new Error(`OpenAI returned ${resp.status}: ${detail}`);
       }
       const data = (await resp.json()) as {
@@ -281,14 +285,7 @@ async function callProvider(
         signal: AbortSignal.timeout(120_000),
       });
       if (!resp.ok) {
-        const errBody = await resp.text().catch(() => "");
-        let detail = "";
-        try {
-          const parsed = JSON.parse(errBody);
-          detail = parsed?.error?.message ?? errBody;
-        } catch {
-          detail = errBody;
-        }
+        const detail = await parseHttpErrorDetail(resp);
         throw new Error(`Custom endpoint returned ${resp.status}: ${detail}`);
       }
       const data = (await resp.json()) as {
