@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import { db } from "../../db/index.js";
@@ -21,9 +22,7 @@ export class ReportGenerator {
 
   constructor() {
     this.reportDir = process.env.REPORT_DIR ?? "./data/reports";
-    if (!fs.existsSync(this.reportDir)) {
-      fs.mkdirSync(this.reportDir, { recursive: true });
-    }
+    fs.mkdirSync(this.reportDir, { recursive: true });
   }
 
   async generatePDF(scanId: string): Promise<string> {
@@ -214,7 +213,7 @@ export class ReportGenerator {
       doc.end();
     });
 
-    const stat = fs.statSync(filePath);
+    const stat = await fsp.stat(filePath);
 
     await db.insert(reports).values({
       id: reportId,
@@ -257,8 +256,8 @@ export class ReportGenerator {
       generatedAt: new Date().toISOString(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-    const stat = fs.statSync(filePath);
+    await fsp.writeFile(filePath, JSON.stringify(payload, null, 2));
+    const stat = await fsp.stat(filePath);
 
     await db.insert(reports).values({
       id: reportId,

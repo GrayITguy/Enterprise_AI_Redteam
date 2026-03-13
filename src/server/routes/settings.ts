@@ -12,6 +12,7 @@ import {
 } from "../services/settingsService.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage } from "../utils/helpers.js";
 import { testProvider } from "../services/aiProvider.js";
 
 export const settingsRouter = Router();
@@ -93,7 +94,7 @@ settingsRouter.post(
       await sendTestEmail(parsed.data.toEmail);
       res.json({ message: "Test email sent successfully" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logger.error(`[Settings] SMTP test failed: ${msg}`);
       res.status(502).json({ error: msg });
     }
@@ -245,7 +246,7 @@ settingsRouter.post(
       await testProvider(providerType, config, endpoint);
       return res.json({ success: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       return res.status(502).json({ success: false, error: msg });
     }
   }
@@ -358,7 +359,7 @@ settingsRouter.post(
 
       return res.json({ models: [] });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logger.debug(`[Settings] Model enumeration failed: ${msg}`);
       return res.status(502).json({ error: msg, models: [] });
     }

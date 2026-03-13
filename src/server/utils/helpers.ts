@@ -16,3 +16,18 @@ export function safeJsonParse<T>(value: string, fallback: T): T {
     return fallback;
   }
 }
+
+/** Extract a human-readable error message from an unknown caught value. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Resolve the effective Ollama base URL from env / config / default,
+ * stripping any trailing slashes.
+ */
+export function resolveOllamaUrl(targetUrl?: string): string {
+  return (
+    process.env.OLLAMA_URL || targetUrl || "http://localhost:11434"
+  ).replace(/\/+$/, "");
+}

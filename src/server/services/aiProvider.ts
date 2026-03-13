@@ -8,6 +8,7 @@
  */
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
+import { resolveOllamaUrl, errorMessage } from "../utils/helpers.js";
 import { getSetting } from "./settingsService.js";
 import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
@@ -86,7 +87,7 @@ async function callLLM(
     lastError = `${providerType} provider returned an empty response`;
     logger.warn(`[AI] ${lastError}`);
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     logger.warn(`[AI] Provider (${providerType}) failed: ${lastError}`);
   }
 
@@ -129,7 +130,7 @@ async function callProvider(
 ): Promise<string | null> {
   switch (providerType) {
     case "ollama": {
-      const originalUrl = (targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const originalUrl = resolveOllamaUrl(targetUrl);
       const url = resolveForHost(originalUrl);
 
       // Only set num_ctx when the model is known — for unknown models, let

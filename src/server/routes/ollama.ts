@@ -6,6 +6,7 @@ import {
   fulfillRelayRequest,
   rejectRelayRequest,
 } from "../services/ollamaRelay.js";
+import { errorMessage } from "../utils/helpers.js";
 
 export const ollamaRouter = Router();
 
@@ -40,7 +41,7 @@ ollamaRouter.get("/status", async (req: Request, res: Response) => {
 
     res.json({ running: true, models });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     res.json({ running: false, error: message });
   }
 });
@@ -79,7 +80,7 @@ ollamaRouter.post("/relay/forward", async (req: Request, res: Response) => {
     const result = await queueRelayRequest(ollamaUrl, path, body ?? {});
     res.json(result);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     res.status(504).json({ error: message });
   }
 });

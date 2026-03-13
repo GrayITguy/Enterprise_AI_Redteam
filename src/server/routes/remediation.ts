@@ -9,6 +9,7 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 
 export const remediationRouter = Router();
@@ -161,7 +162,7 @@ remediationRouter.post(
       return res.json({ plan });
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : String(err);
+        errorMessage(err);
       return res.status(502).json({ error: msg });
     }
   }

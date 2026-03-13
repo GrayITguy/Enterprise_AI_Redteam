@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "../../db/index.js";
 import { appSettings } from "../../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 
 // ─── Encryption ──────────────────────────────────────────────────────────────
 // Derive a 32-byte key from JWT_SECRET for AES-256-CBC encryption of sensitive
@@ -69,19 +69,21 @@ export async function getSetting(key: string): Promise<string | null> {
 export async function getSettings(
   prefix: string
 ): Promise<Record<string, string>> {
-  const rows = await db.select().from(appSettings).all();
+  const rows = await db
+    .select()
+    .from(appSettings)
+    .where(like(appSettings.key, `${prefix}%`))
+    .all();
   const result: Record<string, string> = {};
   for (const row of rows) {
-    if (row.key.startsWith(prefix)) {
-      if (SENSITIVE_KEYS.has(row.key)) {
-        try {
-          result[row.key] = decrypt(row.value);
-        } catch {
-          result[row.key] = row.value;
-        }
-      } else {
+    if (SENSITIVE_KEYS.has(row.key)) {
+      try {
+        result[row.key] = decrypt(row.value);
+      } catch {
         result[row.key] = row.value;
       }
+    } else {
+      result[row.key] = row.value;
     }
   }
   return result;
