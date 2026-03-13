@@ -9,7 +9,7 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage, safeJsonParse } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 
 export const remediationRouter = Router();
@@ -21,7 +21,7 @@ remediationRouter.use(requireAuth);
 // fully offline in air-gapped deployments.
 remediationRouter.post(
   "/scans/:scanId/generate",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     // Check if remediation is enabled via admin settings
     const remEnabled = await getSetting("remediation.enabled");
     if (remEnabled === "false") {
@@ -165,14 +165,14 @@ remediationRouter.post(
         errorMessage(err);
       return res.status(502).json({ error: msg });
     }
-  }
+  })
 );
 
 // ─── POST /api/remediation/scans/:scanId/verify ──────────────────────────────
 // Creates a new scan that re-runs only the failed plugins from the original scan.
 remediationRouter.post(
   "/scans/:scanId/verify",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { v4: uuid } = await import("uuid");
     const { scanQueue } = await import("../services/queue.js");
 
@@ -265,7 +265,7 @@ remediationRouter.post(
       originalScanId: scan.id,
       retestingPluginCount: pluginsToRun.length,
     });
-  }
+  })
 );
 
 // ─── Adaptive prompt builder ─────────────────────────────────────────────────

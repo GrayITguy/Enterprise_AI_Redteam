@@ -6,13 +6,13 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage, safeJsonParse } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 
 export const resultsRouter = Router();
 resultsRouter.use(requireAuth);
 
 // ─── GET /api/results/scans/:scanId/summary ───────────────────────────────────
-resultsRouter.get("/scans/:scanId/summary", async (req: AuthenticatedRequest, res) => {
+resultsRouter.get("/scans/:scanId/summary", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id })
     .from(scans)
@@ -62,12 +62,12 @@ resultsRouter.get("/scans/:scanId/summary", async (req: AuthenticatedRequest, re
   };
 
   return res.json(summary);
-});
+}));
 
 // ─── POST /api/results/scans/:scanId/narrative ────────────────────────────────
 // Uses the project's own LLM provider (including local Ollama) so this works
 // fully offline in air-gapped deployments.
-resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest, res) => {
+resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id, status: scans.status, projectId: scans.projectId })
     .from(scans)
@@ -174,4 +174,4 @@ Write the summary covering: overall risk posture, most significant vulnerabiliti
     const msg = errorMessage(err);
     return res.status(502).json({ error: msg });
   }
-});
+}));

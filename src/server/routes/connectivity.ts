@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { logger } from "../utils/logger.js";
 import { resolveForHost, isRunningInDocker } from "../utils/resolveEndpoint.js";
 import { requireAuth } from "../middleware/auth.js";
-import { errorMessage } from "../utils/helpers.js";
+import { errorMessage, asyncHandler } from "../utils/helpers.js";
 
 export const connectivityRouter = Router();
 connectivityRouter.use(requireAuth);
@@ -26,7 +26,7 @@ interface CheckResult {
  * Body: { targetUrl: string, providerType?: string }
  * Response: CheckResult
  */
-connectivityRouter.post("/check", async (req: Request, res: Response) => {
+connectivityRouter.post("/check", asyncHandler(async (req: Request, res: Response) => {
   const { targetUrl, providerType } = req.body as {
     targetUrl?: string;
     providerType?: string;
@@ -39,7 +39,7 @@ connectivityRouter.post("/check", async (req: Request, res: Response) => {
 
   const result = await checkEndpoint(targetUrl, providerType);
   res.json(result);
-});
+}));
 
 async function checkEndpoint(
   targetUrl: string,

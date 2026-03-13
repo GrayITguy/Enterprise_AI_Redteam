@@ -7,6 +7,7 @@ import { reports, scans } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { ReportGenerator } from "../services/reportGenerator.js";
+import { asyncHandler } from "../utils/helpers.js";
 
 export const reportsRouter = Router();
 reportsRouter.use(requireAuth);
@@ -14,7 +15,7 @@ reportsRouter.use(requireAuth);
 const generator = new ReportGenerator();
 
 // ─── GET /api/reports/:scanId ─────────────────────────────────────────────────
-reportsRouter.get("/:scanId", async (req: AuthenticatedRequest, res) => {
+reportsRouter.get("/:scanId", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id })
     .from(scans)
@@ -30,10 +31,10 @@ reportsRouter.get("/:scanId", async (req: AuthenticatedRequest, res) => {
     .all();
 
   return res.json(existing);
-});
+}));
 
 // ─── POST /api/reports/:scanId/generate ──────────────────────────────────────
-reportsRouter.post("/:scanId/generate", async (req: AuthenticatedRequest, res) => {
+reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const parsed = z
     .object({ format: z.enum(["pdf", "json"]).default("pdf") })
     .safeParse(req.body);
@@ -69,12 +70,12 @@ reportsRouter.post("/:scanId/generate", async (req: AuthenticatedRequest, res) =
     const message = err instanceof Error ? err.message : "Report generation failed";
     return res.status(500).json({ error: message });
   }
-});
+}));
 
 // ─── GET /api/reports/:scanId/download/:reportId ──────────────────────────────
 reportsRouter.get(
   "/:scanId/download/:reportId",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const report = await db
       .select()
       .from(reports)
@@ -117,5 +118,5 @@ reportsRouter.get(
     );
 
     fs.createReadStream(report.filePath).pipe(res);
-  }
+  })
 );
