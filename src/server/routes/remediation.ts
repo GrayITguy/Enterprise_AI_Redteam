@@ -347,12 +347,10 @@ function buildPromptAtLevel(
   const categoryBlocks = sortedCategories
     .map(([cat, findings]) => {
       const catName = OWASP_NAMES[cat] ?? cat;
-      const severityCounts = {
-        critical: findings.filter((f) => f.severity === "critical").length,
-        high: findings.filter((f) => f.severity === "high").length,
-        medium: findings.filter((f) => f.severity === "medium").length,
-        low: findings.filter((f) => f.severity === "low").length,
-      };
+      const severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+      for (const f of findings) {
+        if (f.severity in severityCounts) severityCounts[f.severity as keyof typeof severityCounts]++;
+      }
 
       let examples = "";
       if (examplesPerCategory > 0) {

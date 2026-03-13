@@ -44,7 +44,7 @@ reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRe
   }
 
   const scan = await db
-    .select()
+    .select({ id: scans.id, status: scans.status })
     .from(scans)
     .where(and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id)))
     .get();
@@ -77,7 +77,12 @@ reportsRouter.get(
   "/:scanId/download/:reportId",
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const report = await db
-      .select()
+      .select({
+        id: reports.id,
+        scanId: reports.scanId,
+        format: reports.format,
+        filePath: reports.filePath,
+      })
       .from(reports)
       .where(eq(reports.id, req.params.reportId))
       .get();
