@@ -79,15 +79,47 @@ PLUGIN_MAP = {
 }
 
 
+def _is_safe_url(url_string):
+    """Validate that a URL is safe to connect to (prevents SSRF)."""
+    from urllib.parse import urlparse
+    import ipaddress
+
+    parsed = urlparse(url_string)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed.")
+
+    hostname = parsed.hostname or ""
+
+    # Block cloud metadata endpoints
+    blocked_hosts = {"metadata.google.internal", "169.254.169.254"}
+    if hostname in blocked_hosts:
+        raise ValueError("Access to metadata services is not permitted")
+
+    # Allow localhost (common for Ollama)
+    allowed_private = {"localhost", "127.0.0.1", "host.docker.internal"}
+    if hostname in allowed_private:
+        return parsed
+
+    # Block private IPs
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise ValueError("Access to private network addresses is not permitted")
+    except ValueError as e:
+        if "is not permitted" in str(e):
+            raise
+        # Not an IP address — hostname is fine
+        pass
+
+    return parsed
+
+
 def call_target(config, prompt):
     target_url = config.get("target_url", "")
     model = config.get("model", "default")
     provider_type = config.get("provider_type", "custom")
 
-    from urllib.parse import urlparse
-    parsed = urlparse(target_url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed.")
+    parsed = _is_safe_url(target_url)
 
     if provider_type == "ollama":
         url = f"{target_url.rstrip('/')}/api/generate"

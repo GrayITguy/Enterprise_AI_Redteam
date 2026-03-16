@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import { authRouter } from "./routes/auth.js";
@@ -25,18 +26,31 @@ const app = express();
 // ─── Security headers ─────────────────────────────────────────────────────────
 app.use(
   helmet({
-    contentSecurityPolicy: false, // React app needs inline scripts
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // React app needs inline scripts
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
     crossOriginEmbedderPolicy: false,
   })
 );
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.CORS_ORIGIN ?? "*").split(",").map((s) => s.trim());
-const isWildcardOrigin = allowedOrigins.includes("*");
+const defaultOrigins = process.env.NODE_ENV === "production"
+  ? "http://localhost:15500"
+  : "http://localhost:5173,http://localhost:3000";
+const allowedOrigins = (process.env.CORS_ORIGIN ?? defaultOrigins).split(",").map((s) => s.trim());
 app.use(
   cors({
-    origin: isWildcardOrigin ? "*" : allowedOrigins,
-    credentials: !isWildcardOrigin, // credentials cannot be used with wildcard origin
+    origin: allowedOrigins,
+    credentials: true,
   })
 );
 
@@ -51,6 +65,28 @@ if (process.env.NODE_ENV !== "production") {
     next();
   });
 }
+
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later" },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // stricter for auth endpoints
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many authentication attempts, please try again later" },
+});
+
+// Apply rate limiting to all API routes
+app.use("/api/", apiLimiter);
+// Stricter limits on auth endpoints
+app.use("/api/auth", authLimiter);
 
 // ─── Health check (no auth) ───────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
@@ -78,7 +114,8 @@ if (process.env.NODE_ENV === "production") {
   const siteDir = path.join(__dirname, "../../site/dist");
   app.use(express.static(siteDir));
   // SPA fallback — all non-API routes serve index.html
-  app.get(/^(?!\/api).*/, (_req, res) => {
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next();
     res.sendFile(path.join(siteDir, "index.html"));
   });
 }

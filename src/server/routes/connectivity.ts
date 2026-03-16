@@ -4,6 +4,7 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost, isRunningInDocker } from "../utils/resolveEndpoint.js";
 import { requireAuth } from "../middleware/auth.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
+import { validateUserUrl } from "../utils/urlValidation.js";
 
 export const connectivityRouter = Router();
 connectivityRouter.use(requireAuth);
@@ -45,8 +46,21 @@ async function checkEndpoint(
   targetUrl: string,
   providerType?: string
 ): Promise<CheckResult> {
+  // Validate URL to prevent SSRF
+  let parsedUrl: URL;
+  try {
+    parsedUrl = validateUserUrl(targetUrl);
+  } catch {
+    return {
+      reachable: false,
+      latencyMs: 0,
+      error: "Invalid or disallowed URL",
+      suggestion: "Only http/https URLs to non-internal hosts are allowed.",
+    };
+  }
+
   // In Docker, localhost refers to the container — resolve to host.docker.internal
-  const rawUrl = targetUrl.replace(/\/+$/, "");
+  const rawUrl = parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
   const baseUrl = resolveForHost(rawUrl);
   const dockerResolved = baseUrl !== rawUrl && isRunningInDocker();
   const start = Date.now();

@@ -8,6 +8,7 @@ import {
 } from "../services/ollamaRelay.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
 import { requireAuth } from "../middleware/auth.js";
+import { validateUserUrl } from "../utils/urlValidation.js";
 
 export const ollamaRouter = Router();
 ollamaRouter.use(requireAuth);
@@ -24,8 +25,16 @@ interface OllamaTagsResponse {
 ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => {
   const rawUrl = (req.query.url as string | undefined) ?? "http://localhost:11434";
 
-  // Strip trailing slash so we can safely append /api/tags
-  const baseUrl = rawUrl.replace(/\/+$/, "");
+  // Validate URL to prevent SSRF
+  let baseUrl: string;
+  try {
+    const parsed = validateUserUrl(rawUrl);
+    // Strip trailing slash so we can safely append /api/tags
+    baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
+  } catch (err) {
+    res.status(400).json({ running: false, error: errorMessage(err) });
+    return;
+  }
 
   try {
     const response = await fetch(`${baseUrl}/api/tags`, {
