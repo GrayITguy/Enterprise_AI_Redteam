@@ -4,7 +4,7 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost, isRunningInDocker } from "../utils/resolveEndpoint.js";
 import { requireAuth } from "../middleware/auth.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
-import { validateUserUrl } from "../utils/urlValidation.js";
+import { isAllowedHost } from "../utils/urlValidation.js";
 
 export const connectivityRouter = Router();
 connectivityRouter.use(requireAuth);
@@ -46,11 +46,29 @@ async function checkEndpoint(
   targetUrl: string,
   providerType?: string
 ): Promise<CheckResult> {
-  // Validate URL to prevent SSRF — returns a sanitized base URL string
-  let validatedUrl: string;
+  // ── Inline SSRF guard ──────────────────────────────────────────────────
+  let parsedUrl: URL;
   try {
-    validatedUrl = validateUserUrl(targetUrl);
+    parsedUrl = new URL(targetUrl);
   } catch {
+    return {
+      reachable: false,
+      latencyMs: 0,
+      error: "Invalid URL format",
+      suggestion: "Provide a valid http or https URL.",
+    };
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return {
+      reachable: false,
+      latencyMs: 0,
+      error: "Only http and https URLs are allowed",
+      suggestion: "Change the URL scheme to http:// or https://.",
+    };
+  }
+
+  if (!isAllowedHost(parsedUrl.hostname)) {
     return {
       reachable: false,
       latencyMs: 0,
@@ -58,10 +76,12 @@ async function checkEndpoint(
       suggestion: "Only http/https URLs to non-internal hosts are allowed.",
     };
   }
+  // ── End SSRF guard ─────────────────────────────────────────────────────
 
   // In Docker, localhost refers to the container — resolve to host.docker.internal
-  const baseUrl = resolveForHost(validatedUrl);
-  const dockerResolved = baseUrl !== validatedUrl && isRunningInDocker();
+  const rawUrl = parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
+  const baseUrl = resolveForHost(rawUrl);
+  const dockerResolved = baseUrl !== rawUrl && isRunningInDocker();
   const start = Date.now();
 
   // For Ollama targets, probe the /api/tags endpoint

@@ -83,8 +83,8 @@ const authLimiter = rateLimit({
   message: { error: "Too many authentication attempts, please try again later" },
 });
 
-// Apply rate limiting globally (covers API and SPA fallback routes)
-app.use(apiLimiter);
+// Apply rate limiting to all API routes
+app.use("/api/", apiLimiter);
 // Stricter limits on auth endpoints
 app.use("/api/auth", authLimiter);
 
@@ -114,7 +114,7 @@ if (process.env.NODE_ENV === "production") {
   const siteDir = path.join(__dirname, "../../site/dist");
   app.use(express.static(siteDir));
   // SPA fallback — all non-API routes serve index.html
-  app.get("*", (req, res, next) => {
+  app.get("*", apiLimiter, (req, res, next) => {
     if (req.path.startsWith("/api")) return next();
     res.sendFile(path.join(siteDir, "index.html"));
   });
