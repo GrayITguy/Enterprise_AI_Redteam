@@ -2,8 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { LicenseValidator } from "../../license-validator.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const licenseRouter = Router();
+licenseRouter.use(apiLimiter);
 
 // ─── GET /api/license ─────────────────────────────────────────────────────────
 // Public endpoint — the setup wizard checks this before requiring login

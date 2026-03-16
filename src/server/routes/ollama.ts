@@ -8,9 +8,11 @@ import {
 } from "../services/ollamaRelay.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
 import { requireAuth } from "../middleware/auth.js";
-import { isAllowedHost } from "../utils/urlValidation.js";
+import { ALLOWED_TARGET_HOSTS } from "../utils/urlValidation.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const ollamaRouter = Router();
+ollamaRouter.use(apiLimiter);
 ollamaRouter.use(requireAuth);
 
 interface OllamaTagsResponse {
@@ -25,7 +27,7 @@ interface OllamaTagsResponse {
 ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => {
   const rawUrl = (req.query.url as string | undefined) ?? "http://localhost:11434";
 
-  // ── Inline SSRF guard ──────────────────────────────────────────────────
+  // ── Inline SSRF guard (allowlist-based for CodeQL js/request-forgery) ──
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -39,16 +41,18 @@ ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => 
     return;
   }
 
-  if (!isAllowedHost(parsed.hostname)) {
-    res.status(400).json({ running: false, error: "Access to this host is not permitted" });
+  if (!ALLOWED_TARGET_HOSTS.has(parsed.hostname)) {
+    res.status(400).json({
+      running: false,
+      error: `Host '${parsed.hostname}' is not in the target allowlist. `
+        + "Configure ALLOWED_TARGET_HOSTS to permit additional hosts.",
+    });
     return;
   }
-  // ── End SSRF guard ─────────────────────────────────────────────────────
-
-  const baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
 
   try {
-    const response = await fetch(`${baseUrl}/api/tags`, {
+    const fetchUrl = new URL("/api/tags", parsed.origin);
+    const response = await fetch(fetchUrl, {
       signal: AbortSignal.timeout(5_000),
     });
 

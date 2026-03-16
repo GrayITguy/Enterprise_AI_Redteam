@@ -11,8 +11,10 @@ import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../u
 import { logger } from "../utils/logger.js";
 import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const remediationRouter = Router();
+remediationRouter.use(apiLimiter);
 remediationRouter.use(requireAuth);
 
 // ─── POST /api/remediation/scans/:scanId/generate ────────────────────────────

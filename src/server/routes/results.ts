@@ -7,8 +7,10 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const resultsRouter = Router();
+resultsRouter.use(apiLimiter);
 resultsRouter.use(requireAuth);
 
 // ─── GET /api/results/scans/:scanId/summary ───────────────────────────────────
