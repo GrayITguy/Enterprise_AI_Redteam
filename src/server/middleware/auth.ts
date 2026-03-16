@@ -9,8 +9,12 @@ export interface AuthenticatedRequest extends Request<Record<string, string>> {
   };
 }
 
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
-  throw new Error("JWT_SECRET environment variable is required in production");
+const isDev = process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
+if (!process.env.JWT_SECRET && !isDev) {
+  throw new Error(
+    "JWT_SECRET environment variable is required. " +
+    "Set NODE_ENV=development to use a dev-only fallback."
+  );
 }
 const jwtSecret = process.env.JWT_SECRET ?? "dev-secret-change-me";
 

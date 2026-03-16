@@ -7,7 +7,7 @@ import { DockerRunner } from "./dockerRunner.js";
 import { gateway } from "./endpointGateway.js";
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
-import { isLocalhostUrl } from "../utils/helpers.js";
+import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
@@ -84,7 +84,7 @@ export class ScanOrchestrator {
         .get();
       if (!project) throw new Error(`Project ${scan.projectId} not found`);
 
-      const pluginIds: string[] = JSON.parse(scan.plugins);
+      const pluginIds: string[] = safeJsonParse(scan.plugins, []);
       const plugins = resolvePlugins(pluginIds);
       if (plugins.length === 0) throw new Error("No valid plugins found for this scan");
 
@@ -99,7 +99,7 @@ export class ScanOrchestrator {
       );
 
       const tools = Object.keys(byTool) as PluginTool[];
-      const providerConfig = JSON.parse(project.providerConfig) as Record<string, unknown>;
+      const providerConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
 
       let completedTools = 0;
       let passedTests = 0;
@@ -126,7 +126,7 @@ export class ScanOrchestrator {
           );
         } catch (err) {
           logger.warn(
-            `[Scanner] Could not start endpoint gateway: ${err instanceof Error ? err.message : err}. ` +
+            `[Scanner] Could not start endpoint gateway: ${errorMessage(err)}. ` +
               `Docker workers may not be able to reach localhost targets.`
           );
         }
@@ -204,7 +204,7 @@ export class ScanOrchestrator {
             });
           } catch (err) {
             // Docker not available or image not built — emit an error record per plugin
-            const errMsg = err instanceof Error ? err.message : String(err);
+            const errMsg = errorMessage(err);
             logger.error(`[Scanner] ${tool} worker unavailable: ${errMsg}`);
             for (const pluginId of toolPlugins) {
               await persistResult({
@@ -253,7 +253,7 @@ export class ScanOrchestrator {
         `[Scanner] Scan ${scanId} completed — ${finalTotal} tests, ${failedTests} findings`
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       logger.error(`[Scanner] Scan ${scanId} failed: ${message}`);
       await db
         .update(scans)
@@ -296,7 +296,7 @@ export class ScanOrchestrator {
     // When running on the same machine as Ollama, call it directly (fastest).
     // When hosted remotely, the browser relay forwards via the user's browser.
     if (config.providerType === "ollama") {
-      const ollamaUrl = (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "");
+      const ollamaUrl = resolveOllamaUrl(config.targetUrl);
       const directReachable = await this.probeOllama(ollamaUrl);
 
       if (directReachable) {
@@ -442,89 +442,27 @@ export class ScanOrchestrator {
     },
     onResult: ResultCallback
   ): Promise<void> {
-    // Resolve URL: env override → project target → default, then rewrite for Docker
-    const ollamaUrl = resolveForHost(
-      (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "")
-    );
+    const ollamaUrl = resolveForHost(resolveOllamaUrl(config.targetUrl));
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
 
     logger.info(`[Scanner][ollama-direct] Running attacks directly → ${ollamaUrl}`);
 
-    for (const pluginId of config.plugins) {
-      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
-      const attacks = PLUGIN_ATTACKS[pfId];
-
-      if (!attacks || attacks.length === 0) {
-        await onResult({
-          tool: "promptfoo",
-          category: pfId,
-          severity: this.getSeverity(pluginId),
-          testName: `[promptfoo] ${pfId}`,
-          owaspCategory: this.getOwasp(pluginId),
-          prompt: `(no attack tests defined for ${pfId})`,
-          response: null,
-          passed: true,
-          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
-        });
-        continue;
-      }
-
-      for (const attack of attacks) {
-        const start = Date.now();
-        try {
-          const resp = await fetch(`${ollamaUrl}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model,
-              messages: [{ role: "user", content: attack.prompt }],
-              stream: false,
-            }),
-            signal: AbortSignal.timeout(getOllamaTimeoutMs()),
-          });
-
-          if (!resp.ok) {
-            throw new Error(`Ollama returned HTTP ${resp.status}`);
-          }
-
-          const data = (await resp.json()) as { message?: { content?: string } };
-          const responseText = data.message?.content ?? "";
-          const passed = !attack.failPattern.test(responseText);
-          const latencyMs = Date.now() - start;
-
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: responseText,
-            passed,
-            evidence: JSON.stringify({
-              pluginId,
-              failPattern: attack.failPattern.toString(),
-              latencyMs,
-              direct: true,
-            }),
-          });
-        } catch (err) {
-          logger.error(`[Scanner][ollama-direct] Error for plugin ${pfId}: ${err}`);
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: null,
-            passed: false,
-            evidence: JSON.stringify({ error: String(err), pluginId, direct: true }),
-          });
-        }
-      }
-    }
+    await this.runAttackLoop(config.plugins, "[Scanner][ollama-direct]", onResult, async (attack) => {
+      const resp = await fetch(`${ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: attack.prompt }],
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(getOllamaTimeoutMs()),
+      });
+      if (!resp.ok) throw new Error(`Ollama returned HTTP ${resp.status}`);
+      const data = (await resp.json()) as { message?: { content?: string } };
+      return { responseText: data.message?.content ?? "", extraEvidence: { direct: true } };
+    });
   }
 
   /**
@@ -545,118 +483,54 @@ export class ScanOrchestrator {
     },
     onResult: ResultCallback
   ): Promise<void> {
-    const ollamaUrl = resolveForHost(
-      (process.env.OLLAMA_URL || config.targetUrl || "http://localhost:11434").replace(/\/+$/, "")
-    );
+    const ollamaUrl = resolveForHost(resolveOllamaUrl(config.targetUrl));
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
     const port = process.env.PORT ?? "3000";
-    // EART_APP_URL is set in docker-compose for the worker container (http://app:3000);
-    // falls back to resolveForHost which rewrites localhost → host.docker.internal in Docker
     const appUrl = process.env.EART_APP_URL ?? resolveForHost(`http://localhost:${port}`);
     const relayForwardUrl = `${appUrl}/api/ollama/relay/forward`;
 
     logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
 
-    for (const pluginId of config.plugins) {
-      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
-      const attacks = PLUGIN_ATTACKS[pfId];
+    const RELAY_RETRY_DELAYS = [2_000, 4_000, 8_000];
 
-      if (!attacks || attacks.length === 0) {
-        await onResult({
-          tool: "promptfoo",
-          category: pfId,
-          severity: this.getSeverity(pluginId),
-          testName: `[promptfoo] ${pfId}`,
-          owaspCategory: this.getOwasp(pluginId),
-          prompt: `(no attack tests defined for ${pfId})`,
-          response: null,
-          passed: true,
-          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
-        });
-        continue;
-      }
-
-      for (const attack of attacks) {
-        const start = Date.now();
+    await this.runAttackLoop(config.plugins, "[Scanner][ollama-relay]", onResult, async (attack) => {
+      // Retry relay calls up to 3 times with exponential back-off
+      let relayResp: Response | undefined;
+      for (let attempt = 0; attempt <= RELAY_RETRY_DELAYS.length; attempt++) {
         try {
-          // Retry the relay HTTP call up to 3 times with exponential back-off.
-          // The backend may briefly be unavailable during a tsx-watch hot-reload.
-          const RELAY_RETRY_DELAYS = [2_000, 4_000, 8_000];
-          let relayResp: Response | undefined;
-          for (let attempt = 0; attempt <= RELAY_RETRY_DELAYS.length; attempt++) {
-            try {
-              relayResp = await fetch(relayForwardUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  ollamaUrl,
-                  path: "/api/chat",
-                  body: {
-                    model,
-                    messages: [{ role: "user", content: attack.prompt }],
-                    stream: false,
-                  },
-                }),
-                signal: AbortSignal.timeout(getOllamaTimeoutMs() + 30_000), // slightly longer than relay timeout
-              });
-              break; // success
-            } catch (fetchErr) {
-              if (attempt < RELAY_RETRY_DELAYS.length) {
-                const delay = RELAY_RETRY_DELAYS[attempt]!;
-                logger.warn(
-                  `[Scanner][ollama-relay] Relay unreachable (attempt ${attempt + 1}), ` +
-                    `retrying in ${delay}ms… Is 'npm run dev:worker' running alongside the backend?`
-                );
-                await new Promise<void>((r) => setTimeout(r, delay));
-              } else {
-                throw fetchErr;
-              }
-            }
-          }
-
-          if (!relayResp!.ok) {
-            const errBody = await relayResp!.text().catch(() => "");
-            throw new Error(`Relay returned HTTP ${relayResp!.status}: ${errBody}`);
-          }
-
-          const data = (await relayResp!.json()) as { message?: { content?: string } };
-          const responseText = data.message?.content ?? "";
-          const passed = !attack.failPattern.test(responseText);
-          const latencyMs = Date.now() - start;
-
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: responseText,
-            passed,
-            evidence: JSON.stringify({
-              pluginId,
-              failPattern: attack.failPattern.toString(),
-              latencyMs,
-              relay: true,
+          relayResp = await fetch(relayForwardUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ollamaUrl,
+              path: "/api/chat",
+              body: { model, messages: [{ role: "user", content: attack.prompt }], stream: false },
             }),
+            signal: AbortSignal.timeout(getOllamaTimeoutMs() + 30_000),
           });
-        } catch (err) {
-          logger.error(`[Scanner][ollama-relay] Error for plugin ${pfId}: ${err}`);
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: null,
-            passed: false,
-            evidence: JSON.stringify({ error: String(err), pluginId, relay: true }),
-          });
+          break;
+        } catch (fetchErr) {
+          if (attempt < RELAY_RETRY_DELAYS.length) {
+            const delay = RELAY_RETRY_DELAYS[attempt]!;
+            logger.warn(
+              `[Scanner][ollama-relay] Relay unreachable (attempt ${attempt + 1}), retrying in ${delay}ms…`
+            );
+            await new Promise<void>((r) => setTimeout(r, delay));
+          } else {
+            throw fetchErr;
+          }
         }
       }
-    }
+
+      if (!relayResp!.ok) {
+        const errBody = await relayResp!.text().catch(() => "");
+        throw new Error(`Relay returned HTTP ${relayResp!.status}: ${errBody}`);
+      }
+
+      const data = (await relayResp!.json()) as { message?: { content?: string } };
+      return { responseText: data.message?.content ?? "", extraEvidence: { relay: true } };
+    });
   }
 
   /**
@@ -689,102 +563,51 @@ export class ScanOrchestrator {
 
     logger.info(`[Scanner][custom-direct] Running attacks directly → ${targetUrl}`);
 
-    for (const pluginId of config.plugins) {
-      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
-      const attacks = PLUGIN_ATTACKS[pfId];
+    await this.runAttackLoop(config.plugins, "[Scanner][custom-direct]", onResult, async (attack) => {
+      const resp = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: attack.prompt }],
+        }),
+        signal: AbortSignal.timeout(120_000),
+      });
 
-      if (!attacks || attacks.length === 0) {
-        await onResult({
-          tool: "promptfoo",
-          category: pfId,
-          severity: this.getSeverity(pluginId),
-          testName: `[promptfoo] ${pfId}`,
-          owaspCategory: this.getOwasp(pluginId),
-          prompt: `(no attack tests defined for ${pfId})`,
-          response: null,
-          passed: true,
-          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
-        });
-        continue;
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        throw new Error(`Custom endpoint returned HTTP ${resp.status}: ${errBody}`);
       }
 
-      for (const attack of attacks) {
-        const start = Date.now();
-        try {
-          const resp = await fetch(targetUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model,
-              messages: [{ role: "user", content: attack.prompt }],
-            }),
-            signal: AbortSignal.timeout(120_000),
-          });
+      const data = (await resp.json()) as {
+        choices?: { message?: { content?: string }; text?: string }[];
+        message?: { content?: string };
+        response?: string;
+        output?: string;
+      };
 
-          if (!resp.ok) {
-            const errBody = await resp.text().catch(() => "");
-            throw new Error(`Custom endpoint returned HTTP ${resp.status}: ${errBody}`);
-          }
+      const responseText =
+        data.choices?.[0]?.message?.content ??
+        data.choices?.[0]?.text ??
+        data.message?.content ??
+        data.response ??
+        data.output ??
+        "";
 
-          const data = (await resp.json()) as {
-            choices?: { message?: { content?: string }; text?: string }[];
-            message?: { content?: string };
-            response?: string;
-            output?: string;
-          };
-
-          // Extract response with multiple fallback paths (matches aiProvider.ts)
-          const responseText =
-            data.choices?.[0]?.message?.content ??
-            data.choices?.[0]?.text ??
-            data.message?.content ??
-            data.response ??
-            data.output ??
-            "";
-
-          if (!responseText) {
-            logger.warn(
-              `[Scanner][custom-direct] Empty response for plugin ${pfId} — ` +
-              `response structure: ${JSON.stringify(data).slice(0, 300)}`
-            );
-          }
-
-          const passed = responseText ? !attack.failPattern.test(responseText) : false;
-          const latencyMs = Date.now() - start;
-
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: responseText || null,
-            passed,
-            evidence: JSON.stringify({
-              pluginId,
-              failPattern: attack.failPattern.toString(),
-              latencyMs,
-              direct: true,
-              ...(responseText ? {} : { emptyResponse: true, rawStructure: JSON.stringify(data).slice(0, 300) }),
-            }),
-          });
-        } catch (err) {
-          logger.error(`[Scanner][custom-direct] Error for plugin ${pfId}: ${err}`);
-          await onResult({
-            tool: "promptfoo",
-            category: pfId,
-            severity: this.getSeverity(pluginId),
-            testName: `[promptfoo] ${pfId}`,
-            owaspCategory: this.getOwasp(pluginId),
-            prompt: attack.prompt,
-            response: null,
-            passed: false,
-            evidence: JSON.stringify({ error: String(err), pluginId, direct: true }),
-          });
-        }
+      if (!responseText) {
+        logger.warn(
+          `[Scanner][custom-direct] Empty response — structure: ${JSON.stringify(data).slice(0, 300)}`
+        );
       }
-    }
+
+      return {
+        responseText,
+        extraEvidence: {
+          direct: true,
+          ...(responseText ? {} : { emptyResponse: true, rawStructure: JSON.stringify(data).slice(0, 300) }),
+        },
+      };
+    });
   }
 
   /** Emits error results for each plugin when the promptfoo package is not installed. */
@@ -875,6 +698,82 @@ export class ScanOrchestrator {
             transformResponse: "json.choices[0].message.content",
           },
         };
+    }
+  }
+
+  // ─── Shared attack loop ────────────────────────────────────────────────────
+
+  /**
+   * Iterate over plugins → attacks and call `sendAttack` for each.
+   * Handles the no-attacks placeholder, result emission, and error recording
+   * in one place so the caller only provides the HTTP call logic.
+   */
+  private async runAttackLoop(
+    plugins: string[],
+    logPrefix: string,
+    onResult: ResultCallback,
+    sendAttack: (attack: { prompt: string; failPattern: RegExp }) => Promise<{
+      responseText: string;
+      extraEvidence?: Record<string, unknown>;
+    }>
+  ): Promise<void> {
+    for (const pluginId of plugins) {
+      const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
+      const attacks = PLUGIN_ATTACKS[pfId];
+
+      if (!attacks || attacks.length === 0) {
+        await onResult({
+          tool: "promptfoo",
+          category: pfId,
+          severity: this.getSeverity(pluginId),
+          testName: `[promptfoo] ${pfId}`,
+          owaspCategory: this.getOwasp(pluginId),
+          prompt: `(no attack tests defined for ${pfId})`,
+          response: null,
+          passed: true,
+          evidence: JSON.stringify({ note: "no-attack-library", pluginId }),
+        });
+        continue;
+      }
+
+      for (const attack of attacks) {
+        const start = Date.now();
+        try {
+          const { responseText, extraEvidence } = await sendAttack(attack);
+          const passed = responseText ? !attack.failPattern.test(responseText) : false;
+          const latencyMs = Date.now() - start;
+
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: responseText || null,
+            passed,
+            evidence: JSON.stringify({
+              pluginId,
+              failPattern: attack.failPattern.toString(),
+              latencyMs,
+              ...extraEvidence,
+            }),
+          });
+        } catch (err) {
+          logger.error(`${logPrefix} Error for plugin ${pfId}: ${err}`);
+          await onResult({
+            tool: "promptfoo",
+            category: pfId,
+            severity: this.getSeverity(pluginId),
+            testName: `[promptfoo] ${pfId}`,
+            owaspCategory: this.getOwasp(pluginId),
+            prompt: attack.prompt,
+            response: null,
+            passed: false,
+            evidence: JSON.stringify({ error: String(err), pluginId }),
+          });
+        }
+      }
     }
   }
 

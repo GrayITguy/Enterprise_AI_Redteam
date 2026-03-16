@@ -7,6 +7,7 @@ import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
+import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 
 export const scansRouter = Router();
 scansRouter.use(requireAuth);
@@ -26,7 +27,7 @@ scansRouter.get("/catalog", (_req, res) => {
 });
 
 // ─── GET /api/scans/stats ─────────────────────────────────────────────────────
-scansRouter.get("/stats", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/stats", asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Aggregate failed findings by severity across all completed scans for this user
   const rows = await db
     .select({
@@ -50,11 +51,11 @@ scansRouter.get("/stats", async (req: AuthenticatedRequest, res) => {
     stats[row.severity] = Number(row.count);
   }
   return res.json(stats);
-});
+}));
 
 // ─── GET /api/scans/history ───────────────────────────────────────────────────
 // Returns last 30 completed scans for trend charting (oldest first).
-scansRouter.get("/history", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/history", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const rows = await db
     .select({
       id: scans.id,
@@ -73,11 +74,11 @@ scansRouter.get("/history", async (req: AuthenticatedRequest, res) => {
 
   // Return oldest-first so charts render left-to-right
   return res.json(rows.reverse());
-});
+}));
 
 // ─── GET /api/scans/upcoming ──────────────────────────────────────────────────
 // Returns pending scans that are scheduled in the future + recurring scans.
-scansRouter.get("/upcoming", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/upcoming", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const now = new Date();
   const rows = await db
     .select({
@@ -104,10 +105,10 @@ scansRouter.get("/upcoming", async (req: AuthenticatedRequest, res) => {
     .all();
 
   return res.json(rows);
-});
+}));
 
 // ─── GET /api/scans ───────────────────────────────────────────────────────────
-scansRouter.get("/", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const rows = await db
     .select({
       id: scans.id,
@@ -135,13 +136,13 @@ scansRouter.get("/", async (req: AuthenticatedRequest, res) => {
   return res.json(
     rows.map((s) => ({
       ...s,
-      plugins: JSON.parse(s.plugins),
+      plugins: safeJsonParse(s.plugins, []),
     }))
   );
-});
+}));
 
 // ─── POST /api/scans ──────────────────────────────────────────────────────────
-scansRouter.post("/", async (req: AuthenticatedRequest, res) => {
+scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const parsed = CreateScanSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
@@ -208,10 +209,10 @@ scansRouter.post("/", async (req: AuthenticatedRequest, res) => {
     ...newScan,
     plugins: pluginIds,
   });
-});
+}));
 
 // ─── GET /api/scans/:id ───────────────────────────────────────────────────────
-scansRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({
       id: scans.id,
@@ -242,12 +243,12 @@ scansRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
 
   return res.json({
     ...scan,
-    plugins: JSON.parse(scan.plugins),
+    plugins: safeJsonParse(scan.plugins, []),
   });
-});
+}));
 
 // ─── GET /api/scans/:id/results ───────────────────────────────────────────────
-scansRouter.get("/:id/results", async (req: AuthenticatedRequest, res) => {
+scansRouter.get("/:id/results", asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Verify ownership
   const scan = await db
     .select({ id: scans.id })
@@ -269,13 +270,13 @@ scansRouter.get("/:id/results", async (req: AuthenticatedRequest, res) => {
   return res.json(
     results.map((r) => ({
       ...r,
-      evidence: JSON.parse(r.evidence),
+      evidence: safeJsonParse(r.evidence, {}),
     }))
   );
-});
+}));
 
 // ─── POST /api/scans/:id/cancel ───────────────────────────────────────────────
-scansRouter.post("/:id/cancel", async (req: AuthenticatedRequest, res) => {
+scansRouter.post("/:id/cancel", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id, status: scans.status })
     .from(scans)
@@ -304,4 +305,4 @@ scansRouter.post("/:id/cancel", async (req: AuthenticatedRequest, res) => {
     .where(eq(scans.id, scan.id));
 
   return res.json({ message: "Scan cancelled" });
-});
+}));

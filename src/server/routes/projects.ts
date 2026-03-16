@@ -5,7 +5,7 @@ import { db } from "../../db/index.js";
 import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
-import { safeJsonParse } from "../utils/helpers.js";
+import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 
 export const projectsRouter = Router();
 projectsRouter.use(requireAuth);
@@ -21,7 +21,7 @@ const CreateProjectSchema = z.object({
 const UpdateProjectSchema = CreateProjectSchema.partial();
 
 // ─── GET /api/projects ────────────────────────────────────────────────────────
-projectsRouter.get("/", async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const rows = await db
     .select()
     .from(projects)
@@ -40,10 +40,10 @@ projectsRouter.get("/", async (req: AuthenticatedRequest, res) => {
       providerConfig: safeJsonParse(p.providerConfig, {}),
     }))
   );
-});
+}));
 
 // ─── POST /api/projects ───────────────────────────────────────────────────────
-projectsRouter.post("/", async (req: AuthenticatedRequest, res) => {
+projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const parsed = CreateProjectSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
@@ -69,10 +69,10 @@ projectsRouter.post("/", async (req: AuthenticatedRequest, res) => {
     ...newProject,
     providerConfig: parsed.data.providerConfig,
   });
-});
+}));
 
 // ─── GET /api/projects/:id ────────────────────────────────────────────────────
-projectsRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
+projectsRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const project = await db
     .select()
     .from(projects)
@@ -99,10 +99,10 @@ projectsRouter.get("/:id", async (req: AuthenticatedRequest, res) => {
     providerConfig: safeJsonParse(project.providerConfig, {}),
     recentScans: scanRows,
   });
-});
+}));
 
 // ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
-projectsRouter.patch("/:id", async (req: AuthenticatedRequest, res) => {
+projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const project = await db
     .select({ id: projects.id })
     .from(projects)
@@ -144,11 +144,11 @@ projectsRouter.patch("/:id", async (req: AuthenticatedRequest, res) => {
     ...updated,
     providerConfig: safeJsonParse(updated!.providerConfig, {}),
   });
-});
+}));
 
 // ─── DELETE /api/projects/:id ─────────────────────────────────────────────────
 // Soft delete — sets isArchived = true to preserve scan history
-projectsRouter.delete("/:id", async (req: AuthenticatedRequest, res) => {
+projectsRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const project = await db
     .select({ id: projects.id })
     .from(projects)
@@ -167,4 +167,4 @@ projectsRouter.delete("/:id", async (req: AuthenticatedRequest, res) => {
     .where(eq(projects.id, req.params.id));
 
   return res.status(204).send();
-});
+}));

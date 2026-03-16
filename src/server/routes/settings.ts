@@ -12,6 +12,7 @@ import {
 } from "../services/settingsService.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { testProvider } from "../services/aiProvider.js";
 
 export const settingsRouter = Router();
@@ -23,7 +24,7 @@ settingsRouter.use(requireAuth);
 settingsRouter.get(
   "/smtp",
   requireRole("admin"),
-  async (_req: AuthenticatedRequest, res) => {
+  asyncHandler(async (_req: AuthenticatedRequest, res) => {
     const s = await getSettings("smtp.");
     res.json({
       host: s["smtp.host"] ?? "",
@@ -34,14 +35,14 @@ settingsRouter.get(
       from: s["smtp.from"] ?? "",
       envConfigured: !!process.env.SMTP_HOST,
     });
-  }
+  })
 );
 
 /** PUT /api/settings/smtp — admin only */
 settingsRouter.put(
   "/smtp",
   requireRole("admin"),
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
       host: z.string().min(1, "SMTP host is required"),
       port: z.string().regex(/^\d+$/, "Port must be a number"),
@@ -72,14 +73,14 @@ settingsRouter.put(
 
     logger.info(`[Settings] SMTP settings updated by ${req.user!.email}`);
     res.json({ message: "SMTP settings saved" });
-  }
+  })
 );
 
 /** POST /api/settings/smtp/test — admin only, send a test email */
 settingsRouter.post(
   "/smtp/test",
   requireRole("admin"),
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({ toEmail: z.string().email() });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
@@ -93,11 +94,11 @@ settingsRouter.post(
       await sendTestEmail(parsed.data.toEmail);
       res.json({ message: "Test email sent successfully" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logger.error(`[Settings] SMTP test failed: ${msg}`);
       res.status(502).json({ error: msg });
     }
-  }
+  })
 );
 
 // ─── Remediation Settings ───────────────────────────────────────────────────
@@ -105,11 +106,11 @@ settingsRouter.post(
 /** GET /api/settings/remediation — any authenticated user (Remediation page checks this) */
 settingsRouter.get(
   "/remediation",
-  async (_req: AuthenticatedRequest, res) => {
+  asyncHandler(async (_req: AuthenticatedRequest, res) => {
     const s = await getSettings("remediation.");
     const config = s["remediation.providerConfig"]
-      ? JSON.parse(s["remediation.providerConfig"])
-      : {};
+      ? safeJsonParse<Record<string, unknown>>(s["remediation.providerConfig"], {})
+      : {} as Record<string, unknown>;
 
     // Redact API key in response
     if (config.apiKey) {
@@ -123,14 +124,14 @@ settingsRouter.get(
       providerType: s["remediation.providerType"] ?? "project",
       providerConfig: config,
     });
-  }
+  })
 );
 
 /** PUT /api/settings/remediation — admin only */
 settingsRouter.put(
   "/remediation",
   requireRole("admin"),
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
       enabled: z.boolean(),
       providerType: z.enum([
@@ -181,7 +182,7 @@ settingsRouter.put(
           // Only carry over old API key if provider type hasn't changed
           const existing = await getSetting("remediation.providerConfig");
           if (existing) {
-            const old = JSON.parse(existing);
+            const old = safeJsonParse<Record<string, string>>(existing, {});
             if (old.apiKey) cleanConfig.apiKey = old.apiKey;
           }
         }
@@ -201,7 +202,7 @@ settingsRouter.put(
       `[Settings] Remediation settings updated by ${req.user!.email}`
     );
     res.json({ message: "Remediation settings saved" });
-  }
+  })
 );
 
 // ─── Test Connection ────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ settingsRouter.put(
 settingsRouter.post(
   "/remediation/test",
   requireRole("admin"),
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
       providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),
       apiKey: z.string().optional(),
@@ -245,10 +246,10 @@ settingsRouter.post(
       await testProvider(providerType, config, endpoint);
       return res.json({ success: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       return res.status(502).json({ success: false, error: msg });
     }
-  }
+  })
 );
 
 // ─── Model Enumeration ──────────────────────────────────────────────────────
@@ -261,7 +262,7 @@ settingsRouter.post(
 settingsRouter.post(
   "/models",
   requireRole("admin"),
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
       providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),
       endpoint: z.string().optional(),
@@ -358,9 +359,9 @@ settingsRouter.post(
 
       return res.json({ models: [] });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logger.debug(`[Settings] Model enumeration failed: ${msg}`);
       return res.status(502).json({ error: msg, models: [] });
     }
-  }
+  })
 );

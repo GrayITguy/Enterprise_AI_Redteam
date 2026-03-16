@@ -9,6 +9,7 @@ import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { getSetting } from "../services/settingsService.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 
 export const remediationRouter = Router();
@@ -20,7 +21,7 @@ remediationRouter.use(requireAuth);
 // fully offline in air-gapped deployments.
 remediationRouter.post(
   "/scans/:scanId/generate",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     // Check if remediation is enabled via admin settings
     const remEnabled = await getSetting("remediation.enabled");
     if (remEnabled === "false") {
@@ -63,7 +64,7 @@ remediationRouter.post(
       .get();
 
     const providerConfig = project
-      ? JSON.parse(project.providerConfig)
+      ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {})
       : {};
     const systemPrompt = (providerConfig.systemPrompt as string) || "(none configured)";
 
@@ -161,17 +162,17 @@ remediationRouter.post(
       return res.json({ plan });
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : String(err);
+        errorMessage(err);
       return res.status(502).json({ error: msg });
     }
-  }
+  })
 );
 
 // ─── POST /api/remediation/scans/:scanId/verify ──────────────────────────────
 // Creates a new scan that re-runs only the failed plugins from the original scan.
 remediationRouter.post(
   "/scans/:scanId/verify",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { v4: uuid } = await import("uuid");
     const { scanQueue } = await import("../services/queue.js");
 
@@ -214,7 +215,7 @@ remediationRouter.post(
     }
 
     // Map failed results back to plugin IDs
-    const originalPlugins: string[] = JSON.parse(scan.plugins);
+    const originalPlugins: string[] = safeJsonParse(scan.plugins, []);
     const failedTools = new Set(failedResults.map((r) => r.tool));
     const failedCategories = new Set(failedResults.map((r) => r.category));
 
@@ -264,7 +265,7 @@ remediationRouter.post(
       originalScanId: scan.id,
       retestingPluginCount: pluginsToRun.length,
     });
-  }
+  })
 );
 
 // ─── Adaptive prompt builder ─────────────────────────────────────────────────
@@ -346,12 +347,10 @@ function buildPromptAtLevel(
   const categoryBlocks = sortedCategories
     .map(([cat, findings]) => {
       const catName = OWASP_NAMES[cat] ?? cat;
-      const severityCounts = {
-        critical: findings.filter((f) => f.severity === "critical").length,
-        high: findings.filter((f) => f.severity === "high").length,
-        medium: findings.filter((f) => f.severity === "medium").length,
-        low: findings.filter((f) => f.severity === "low").length,
-      };
+      const severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+      for (const f of findings) {
+        if (f.severity in severityCounts) severityCounts[f.severity as keyof typeof severityCounts]++;
+      }
 
       let examples = "";
       if (examplesPerCategory > 0) {

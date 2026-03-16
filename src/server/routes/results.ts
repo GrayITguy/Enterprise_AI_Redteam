@@ -6,12 +6,13 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
 import { logger } from "../utils/logger.js";
+import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 
 export const resultsRouter = Router();
 resultsRouter.use(requireAuth);
 
 // ─── GET /api/results/scans/:scanId/summary ───────────────────────────────────
-resultsRouter.get("/scans/:scanId/summary", async (req: AuthenticatedRequest, res) => {
+resultsRouter.get("/scans/:scanId/summary", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id })
     .from(scans)
@@ -26,47 +27,47 @@ resultsRouter.get("/scans/:scanId/summary", async (req: AuthenticatedRequest, re
     .where(eq(scanResults.scanId, req.params.scanId))
     .all();
 
+  // Single-pass aggregation
+  let passed = 0;
+  let failed = 0;
+  const bySeverity: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const byTool: Record<string, { total: number; failed: number }> = {};
+  const byOwaspCategory: Record<string, { total: number; failed: number }> = {};
+
+  for (const r of results) {
+    if (r.passed) passed++;
+    else {
+      failed++;
+      bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
+    }
+    if (r.severity === "info" && r.passed) bySeverity.info++;
+
+    if (!byTool[r.tool]) byTool[r.tool] = { total: 0, failed: 0 };
+    byTool[r.tool].total++;
+    if (!r.passed) byTool[r.tool].failed++;
+
+    const cat = r.owaspCategory ?? "Other";
+    if (!byOwaspCategory[cat]) byOwaspCategory[cat] = { total: 0, failed: 0 };
+    byOwaspCategory[cat].total++;
+    if (!r.passed) byOwaspCategory[cat].failed++;
+  }
+
   const summary = {
     total: results.length,
-    passed: results.filter((r) => r.passed).length,
-    failed: results.filter((r) => !r.passed).length,
-    bySeverity: {
-      critical: results.filter((r) => r.severity === "critical" && !r.passed).length,
-      high: results.filter((r) => r.severity === "high" && !r.passed).length,
-      medium: results.filter((r) => r.severity === "medium" && !r.passed).length,
-      low: results.filter((r) => r.severity === "low" && !r.passed).length,
-      info: results.filter((r) => r.severity === "info").length,
-    },
-    byTool: (["promptfoo", "garak", "pyrit", "deepteam"] as const).reduce(
-      (acc, tool) => {
-        const toolResults = results.filter((r) => r.tool === tool);
-        acc[tool] = {
-          total: toolResults.length,
-          failed: toolResults.filter((r) => !r.passed).length,
-        };
-        return acc;
-      },
-      {} as Record<string, { total: number; failed: number }>
-    ),
-    byOwaspCategory: results.reduce(
-      (acc, r) => {
-        const cat = r.owaspCategory ?? "Other";
-        if (!acc[cat]) acc[cat] = { total: 0, failed: 0 };
-        acc[cat].total++;
-        if (!r.passed) acc[cat].failed++;
-        return acc;
-      },
-      {} as Record<string, { total: number; failed: number }>
-    ),
+    passed,
+    failed,
+    bySeverity,
+    byTool,
+    byOwaspCategory,
   };
 
   return res.json(summary);
-});
+}));
 
 // ─── POST /api/results/scans/:scanId/narrative ────────────────────────────────
 // Uses the project's own LLM provider (including local Ollama) so this works
 // fully offline in air-gapped deployments.
-resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest, res) => {
+resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const scan = await db
     .select({ id: scans.id, status: scans.status, projectId: scans.projectId })
     .from(scans)
@@ -89,7 +90,7 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
     .where(eq(projects.id, scan.projectId))
     .get();
 
-  const providerConfig = project ? JSON.parse(project.providerConfig) : {};
+  const providerConfig = project ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {}) : {};
 
   // Determine context window for budget-aware prompt building
   const model = (providerConfig.model as string) || "";
@@ -103,17 +104,20 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
     .all();
 
   const total = results.length;
-  const failed = results.filter((r) => !r.passed).length;
-  const bySeverity = {
-    critical: results.filter((r) => r.severity === "critical" && !r.passed).length,
-    high: results.filter((r) => r.severity === "high" && !r.passed).length,
-    medium: results.filter((r) => r.severity === "medium" && !r.passed).length,
-    low: results.filter((r) => r.severity === "low" && !r.passed).length,
-  };
+  let failedCount = 0;
+  const sevCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  const criticalHighFindings: typeof results = [];
+  const owaspHitSet = new Set<string>();
 
-  // Adaptively limit findings based on available context budget
-  const criticalHighFindings = results
-    .filter((r) => !r.passed && (r.severity === "critical" || r.severity === "high"));
+  for (const r of results) {
+    if (!r.passed) {
+      failedCount++;
+      sevCounts[r.severity] = (sevCounts[r.severity] ?? 0) + 1;
+      if (r.severity === "critical" || r.severity === "high") criticalHighFindings.push(r);
+      if (r.owaspCategory) owaspHitSet.add(r.owaspCategory);
+    }
+  }
+  const bySeverity = sevCounts;
 
   // Start with up to 10, reduce if context is tight
   const basePromptTokens = 350; // approximate tokens for template text
@@ -130,15 +134,13 @@ resultsRouter.post("/scans/:scanId/narrative", async (req: AuthenticatedRequest,
     .slice(0, maxFindings)
     .map((r) => `- [${r.severity.toUpperCase()}] ${r.testName} (${r.tool}, ${r.owaspCategory ?? "N/A"})`);
 
-  const owaspHits = [...new Set(
-    results.filter((r) => !r.passed && r.owaspCategory).map((r) => r.owaspCategory)
-  )];
+  const owaspHits = [...owaspHitSet];
 
   const prompt = `You are a senior AI security consultant. Analyze the following LLM red team scan results and write a concise executive summary (3-5 paragraphs) for a non-technical stakeholder.
 
 Scan Statistics:
 - Total tests run: ${total}
-- Failed (vulnerabilities found): ${failed} (${total > 0 ? Math.round((failed / total) * 100) : 0}% failure rate)
+- Failed (vulnerabilities found): ${failedCount} (${total > 0 ? Math.round((failedCount / total) * 100) : 0}% failure rate)
 - Critical findings: ${bySeverity.critical}
 - High findings: ${bySeverity.high}
 - Medium findings: ${bySeverity.medium}
@@ -169,7 +171,7 @@ Write the summary covering: overall risk posture, most significant vulnerabiliti
     );
     return res.json({ narrative });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return res.status(502).json({ error: msg });
   }
-});
+}));

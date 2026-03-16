@@ -6,8 +6,11 @@ import {
   fulfillRelayRequest,
   rejectRelayRequest,
 } from "../services/ollamaRelay.js";
+import { errorMessage, asyncHandler } from "../utils/helpers.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export const ollamaRouter = Router();
+ollamaRouter.use(requireAuth);
 
 interface OllamaTagsResponse {
   models: Array<{ name: string }>;
@@ -17,9 +20,8 @@ interface OllamaTagsResponse {
  * GET /api/ollama/status?url=http://localhost:11434
  *
  * Probes an Ollama instance and returns the list of available models.
- * No auth required — this is a connectivity check, not a data operation.
  */
-ollamaRouter.get("/status", async (req: Request, res: Response) => {
+ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => {
   const rawUrl = (req.query.url as string | undefined) ?? "http://localhost:11434";
 
   // Strip trailing slash so we can safely append /api/tags
@@ -40,10 +42,10 @@ ollamaRouter.get("/status", async (req: Request, res: Response) => {
 
     res.json({ running: true, models });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     res.json({ running: false, error: message });
   }
-});
+}));
 
 // ─── Browser Relay Endpoints ──────────────────────────────────────────────────
 //
@@ -63,7 +65,7 @@ ollamaRouter.get("/status", async (req: Request, res: Response) => {
  * Queues an Ollama API call for the browser relay and waits (up to 120 s) for
  * the browser to fulfill it.  Returns the raw Ollama response JSON.
  */
-ollamaRouter.post("/relay/forward", async (req: Request, res: Response) => {
+ollamaRouter.post("/relay/forward", asyncHandler(async (req: Request, res: Response) => {
   const { ollamaUrl, path, body } = req.body as {
     ollamaUrl?: string;
     path?: string;
@@ -79,10 +81,10 @@ ollamaRouter.post("/relay/forward", async (req: Request, res: Response) => {
     const result = await queueRelayRequest(ollamaUrl, path, body ?? {});
     res.json(result);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     res.status(504).json({ error: message });
   }
-});
+}));
 
 /**
  * GET /api/ollama/relay/poll
@@ -91,14 +93,14 @@ ollamaRouter.post("/relay/forward", async (req: Request, res: Response) => {
  * request; responds with { requestId, ollamaUrl, path, body } when one is
  * available, or { idle: true } on timeout.
  */
-ollamaRouter.get("/relay/poll", async (_req: Request, res: Response) => {
+ollamaRouter.get("/relay/poll", asyncHandler(async (_req: Request, res: Response) => {
   const item = await pollNextRequest(30_000);
   if (!item) {
     res.json({ idle: true });
     return;
   }
   res.json(item);
-});
+}));
 
 /**
  * POST /api/ollama/relay/fulfill

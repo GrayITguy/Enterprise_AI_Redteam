@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
 import { db } from "../../db/index.js";
@@ -7,6 +8,7 @@ import { scans, scanResults, reports, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../utils/logger.js";
 import { OWASP_NAMES } from "../config/constants.js";
+import { safeJsonParse } from "../utils/helpers.js";
 
 const SEVERITY_COLORS = {
   critical: [220, 38, 38],
@@ -21,9 +23,7 @@ export class ReportGenerator {
 
   constructor() {
     this.reportDir = process.env.REPORT_DIR ?? "./data/reports";
-    if (!fs.existsSync(this.reportDir)) {
-      fs.mkdirSync(this.reportDir, { recursive: true });
-    }
+    fs.mkdirSync(this.reportDir, { recursive: true });
   }
 
   async generatePDF(scanId: string): Promise<string> {
@@ -90,13 +90,17 @@ export class ReportGenerator {
         .text("Executive Summary", { underline: false });
       doc.moveDown(0.5);
 
-      const failedCount = results.filter((r) => !r.passed).length;
+      const counts = { failed: 0, critical: 0, high: 0 };
+      for (const r of results) {
+        if (!r.passed) {
+          counts.failed++;
+          if (r.severity === "critical") counts.critical++;
+          else if (r.severity === "high") counts.high++;
+        }
+      }
       const failRate = results.length > 0
-        ? Math.round((failedCount / results.length) * 100)
+        ? Math.round((counts.failed / results.length) * 100)
         : 0;
-
-      const criticalCount = results.filter((r) => r.severity === "critical" && !r.passed).length;
-      const highCount = results.filter((r) => r.severity === "high" && !r.passed).length;
 
       doc
         .fillColor("#374151")
@@ -105,8 +109,8 @@ export class ReportGenerator {
         .text(
           `This report summarizes the AI security assessment for the project "${project?.name ?? "Unknown"}". ` +
           `The scan tested ${results.length} security controls across ${new Set(results.map((r) => r.tool)).size} tools. ` +
-          `${failedCount} tests failed (${failRate}% failure rate), including ` +
-          `${criticalCount} critical and ${highCount} high severity findings.`
+          `${counts.failed} tests failed (${failRate}% failure rate), including ` +
+          `${counts.critical} critical and ${counts.high} high severity findings.`
         );
 
       doc.moveDown(1.5);
@@ -124,10 +128,18 @@ export class ReportGenerator {
         .text("OWASP LLM Top 10 Coverage");
       doc.moveDown(0.5);
 
+      // Single-pass aggregation for OWASP categories
+      const owaspAgg = new Map<string, { total: number; failed: number }>();
+      for (const r of results) {
+        if (!r.owaspCategory) continue;
+        let entry = owaspAgg.get(r.owaspCategory);
+        if (!entry) { entry = { total: 0, failed: 0 }; owaspAgg.set(r.owaspCategory, entry); }
+        entry.total++;
+        if (!r.passed) entry.failed++;
+      }
       const owaspResults = Object.entries(OWASP_NAMES).map(([key, name]) => {
-        const catResults = results.filter((r) => r.owaspCategory === key);
-        const catFailed = catResults.filter((r) => !r.passed).length;
-        return { key, name, total: catResults.length, failed: catFailed };
+        const agg = owaspAgg.get(key);
+        return { key, name, total: agg?.total ?? 0, failed: agg?.failed ?? 0 };
       });
 
       for (const owasp of owaspResults) {
@@ -214,7 +226,7 @@ export class ReportGenerator {
       doc.end();
     });
 
-    const stat = fs.statSync(filePath);
+    const stat = await fsp.stat(filePath);
 
     await db.insert(reports).values({
       id: reportId,
@@ -246,19 +258,19 @@ export class ReportGenerator {
     const payload = {
       scan: {
         ...scan,
-        plugins: JSON.parse(scan.plugins),
+        plugins: safeJsonParse(scan.plugins, []),
       },
-      results: results.map((r) => ({ ...r, evidence: JSON.parse(r.evidence) })),
+      results: results.map((r) => ({ ...r, evidence: safeJsonParse(r.evidence, {}) })),
       summary: {
         total: results.length,
-        passed: results.filter((r) => r.passed).length,
-        failed: results.filter((r) => !r.passed).length,
+        passed: results.reduce((n, r) => n + (r.passed ? 1 : 0), 0),
+        failed: results.reduce((n, r) => n + (r.passed ? 0 : 1), 0),
       },
       generatedAt: new Date().toISOString(),
     };
 
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-    const stat = fs.statSync(filePath);
+    await fsp.writeFile(filePath, JSON.stringify(payload, null, 2));
+    const stat = await fsp.stat(filePath);
 
     await db.insert(reports).values({
       id: reportId,
@@ -294,14 +306,19 @@ export class ReportGenerator {
     tableY += 22;
     doc.rect(tableX, tableY, colWidth * 5, 28).fill("#f8fafc").stroke();
 
+    // Single-pass severity count
+    const sevCounts: Record<string, number> = {};
+    for (const r of results) {
+      if (!r.passed) sevCounts[r.severity] = (sevCounts[r.severity] ?? 0) + 1;
+    }
+
     doc.fontSize(14).font("Helvetica-Bold");
     for (let i = 0; i < severities.length; i++) {
       const sev = severities[i];
-      const count = results.filter((r) => r.severity === sev && !r.passed).length;
       const color = SEVERITY_COLORS[sev] as [number, number, number];
       doc
         .fillColor(color)
-        .text(String(count), tableX + i * colWidth + 5, tableY + 6, {
+        .text(String(sevCounts[sev] ?? 0), tableX + i * colWidth + 5, tableY + 6, {
           width: colWidth - 10,
           align: "center",
         });
