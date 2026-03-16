@@ -46,10 +46,10 @@ async function checkEndpoint(
   targetUrl: string,
   providerType?: string
 ): Promise<CheckResult> {
-  // Validate URL to prevent SSRF
-  let parsedUrl: URL;
+  // Validate URL to prevent SSRF — returns a sanitized base URL string
+  let validatedUrl: string;
   try {
-    parsedUrl = validateUserUrl(targetUrl);
+    validatedUrl = validateUserUrl(targetUrl);
   } catch {
     return {
       reachable: false,
@@ -60,9 +60,8 @@ async function checkEndpoint(
   }
 
   // In Docker, localhost refers to the container — resolve to host.docker.internal
-  const rawUrl = parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
-  const baseUrl = resolveForHost(rawUrl);
-  const dockerResolved = baseUrl !== rawUrl && isRunningInDocker();
+  const baseUrl = resolveForHost(validatedUrl);
+  const dockerResolved = baseUrl !== validatedUrl && isRunningInDocker();
   const start = Date.now();
 
   // For Ollama targets, probe the /api/tags endpoint

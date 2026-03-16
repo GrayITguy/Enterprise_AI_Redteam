@@ -120,9 +120,14 @@ def call_target(config, prompt):
     provider_type = config.get("provider_type", "custom")
 
     parsed = _is_safe_url(target_url)
+    # Build the safe base URL from validated/parsed components (not raw user input)
+    safe_base = f"{parsed.scheme}://{parsed.hostname}"
+    if parsed.port:
+        safe_base += f":{parsed.port}"
+    safe_base += parsed.path.rstrip("/")
 
     if provider_type == "ollama":
-        url = f"{target_url.rstrip('/')}/api/generate"
+        url = f"{safe_base}/api/generate"
         payload = json.dumps({
             "model": model,
             "prompt": prompt,
@@ -135,7 +140,7 @@ def call_target(config, prompt):
             data = json.loads(resp.read())
             return data.get("response", "")
     else:
-        url = f"{target_url.rstrip('/')}/v1/chat/completions"
+        url = f"{safe_base}/v1/chat/completions"
         payload = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],

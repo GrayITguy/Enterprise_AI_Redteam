@@ -83,8 +83,8 @@ const authLimiter = rateLimit({
   message: { error: "Too many authentication attempts, please try again later" },
 });
 
-// Apply rate limiting to all API routes
-app.use("/api/", apiLimiter);
+// Apply rate limiting globally (covers API and SPA fallback routes)
+app.use(apiLimiter);
 // Stricter limits on auth endpoints
 app.use("/api/auth", authLimiter);
 

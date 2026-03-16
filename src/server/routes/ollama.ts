@@ -28,9 +28,7 @@ ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => 
   // Validate URL to prevent SSRF
   let baseUrl: string;
   try {
-    const parsed = validateUserUrl(rawUrl);
-    // Strip trailing slash so we can safely append /api/tags
-    baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
+    baseUrl = validateUserUrl(rawUrl);
   } catch (err) {
     res.status(400).json({ running: false, error: errorMessage(err) });
     return;
