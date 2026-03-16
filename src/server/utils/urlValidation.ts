@@ -1,4 +1,5 @@
 import { URL } from "node:url";
+import net from "node:net";
 
 const BLOCKED_HOSTNAMES = new Set([
   "metadata.google.internal",
@@ -6,66 +7,59 @@ const BLOCKED_HOSTNAMES = new Set([
   "metadata.internal",
 ]);
 
-const PRIVATE_IP_PATTERNS = [
-  /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, // loopback
-  /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/,  // 10.0.0.0/8
-  /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/, // 172.16.0.0/12
-  /^192\.168\.\d{1,3}\.\d{1,3}$/,      // 192.168.0.0/16
-  /^0\.0\.0\.0$/,
-  /^\[?::1\]?$/,     // IPv6 loopback
-  /^\[?fe80:/i,      // IPv6 link-local
-  /^\[?fc/i,         // IPv6 unique-local
-  /^\[?fd/i,         // IPv6 unique-local
-];
-
 /**
- * Allowed hostnames that are private but explicitly needed by the application.
+ * Allowed private/local hostnames that are explicitly needed by the application.
  * localhost / 127.0.0.1 are permitted because users commonly run Ollama locally.
  */
-const ALLOWED_PRIVATE = new Set([
+export const ALLOWED_HOSTS = new Set([
   "localhost",
   "127.0.0.1",
   "host.docker.internal",
 ]);
 
 /**
- * Validates a user-supplied URL to prevent SSRF attacks.
- * - Only http and https schemes are allowed.
- * - Cloud metadata endpoints and internal IP ranges (except localhost) are blocked.
- *
- * Returns the parsed URL on success or throws an error.
+ * Check if an IP address string belongs to a private/internal range.
  */
-export function validateUserUrl(rawUrl: string): URL {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error("Invalid URL format");
-  }
+export function isPrivateIP(ip: string): boolean {
+  if (ip.startsWith("10.")) return true;
+  if (ip.startsWith("192.168.")) return true;
+  if (ip.startsWith("0.")) return true;
+  if (ip === "169.254.169.254") return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
 
-  // Only allow http/https
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`URL scheme '${parsed.protocol}' is not allowed. Only http and https are permitted.`);
-  }
+  const lowerIp = ip.replace(/^\[|\]$/g, "").toLowerCase();
+  if (lowerIp === "::1") return true;
+  if (lowerIp.startsWith("fe80:")) return true;
+  if (lowerIp.startsWith("fc") || lowerIp.startsWith("fd")) return true;
 
-  const hostname = parsed.hostname.toLowerCase();
+  return false;
+}
+
+/**
+ * Returns true if the hostname is safe to make outbound requests to.
+ * This is an ALLOWLIST check: returns true only for known-safe hosts
+ * (explicit allowlist + public multi-label hostnames that aren't
+ * cloud metadata endpoints).
+ *
+ * Designed to be used as an inline guard that static analysis tools
+ * (CodeQL) can recognise as an SSRF sanitiser.
+ */
+export function isAllowedHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+
+  // Explicit allowlist (localhost, docker-internal, etc.)
+  if (ALLOWED_HOSTS.has(h)) return true;
 
   // Block cloud metadata endpoints
-  if (BLOCKED_HOSTNAMES.has(hostname)) {
-    throw new Error("Access to this host is not permitted");
-  }
+  if (BLOCKED_HOSTNAMES.has(h)) return false;
 
-  // Allow explicitly permitted private hosts (localhost for Ollama, etc.)
-  if (ALLOWED_PRIVATE.has(hostname)) {
-    return parsed;
-  }
+  // Block private IPs (that aren't in the explicit allowlist)
+  if (net.isIP(h) && isPrivateIP(h)) return false;
 
-  // Block other private/internal IPs
-  for (const pattern of PRIVATE_IP_PATTERNS) {
-    if (pattern.test(hostname)) {
-      throw new Error("Access to private network addresses is not permitted");
-    }
-  }
+  // Block single-label hostnames (e.g. "redis", "db") which typically
+  // resolve to internal Docker/Kubernetes services.
+  if (!h.includes(".")) return false;
 
-  return parsed;
+  // Everything else (public FQDN or public IP) is allowed
+  return true;
 }

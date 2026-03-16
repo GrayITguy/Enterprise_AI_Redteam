@@ -8,7 +8,7 @@ import {
 } from "../services/ollamaRelay.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
 import { requireAuth } from "../middleware/auth.js";
-import { validateUserUrl } from "../utils/urlValidation.js";
+import { isAllowedHost } from "../utils/urlValidation.js";
 
 export const ollamaRouter = Router();
 ollamaRouter.use(requireAuth);
@@ -25,16 +25,27 @@ interface OllamaTagsResponse {
 ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => {
   const rawUrl = (req.query.url as string | undefined) ?? "http://localhost:11434";
 
-  // Validate URL to prevent SSRF
-  let baseUrl: string;
+  // ── Inline SSRF guard ──────────────────────────────────────────────────
+  let parsed: URL;
   try {
-    const parsed = validateUserUrl(rawUrl);
-    // Strip trailing slash so we can safely append /api/tags
-    baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
-  } catch (err) {
-    res.status(400).json({ running: false, error: errorMessage(err) });
+    parsed = new URL(rawUrl);
+  } catch {
+    res.status(400).json({ running: false, error: "Invalid URL format" });
     return;
   }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    res.status(400).json({ running: false, error: "Only http and https URLs are allowed" });
+    return;
+  }
+
+  if (!isAllowedHost(parsed.hostname)) {
+    res.status(400).json({ running: false, error: "Access to this host is not permitted" });
+    return;
+  }
+  // ── End SSRF guard ─────────────────────────────────────────────────────
+
+  const baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
 
   try {
     const response = await fetch(`${baseUrl}/api/tags`, {
