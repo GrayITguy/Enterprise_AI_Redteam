@@ -14,8 +14,11 @@ import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
 import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { testProvider } from "../services/aiProvider.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
+import { ALLOWED_TARGET_HOSTS } from "../utils/urlValidation.js";
 
 export const settingsRouter = Router();
+settingsRouter.use(apiLimiter);
 settingsRouter.use(requireAuth);
 
 // ─── SMTP Settings ──────────────────────────────────────────────────────────
@@ -275,6 +278,25 @@ settingsRouter.post(
     }
 
     const { providerType, endpoint, apiKey } = parsed.data;
+
+    // ── SSRF guard: validate endpoint hostname against allowlist ──────────
+    if (endpoint) {
+      let epUrl: URL;
+      try {
+        epUrl = new URL(endpoint);
+      } catch {
+        return res.status(400).json({ error: "Invalid endpoint URL", models: [] });
+      }
+      if (epUrl.protocol !== "http:" && epUrl.protocol !== "https:") {
+        return res.status(400).json({ error: "Only http/https endpoints are allowed", models: [] });
+      }
+      if (!ALLOWED_TARGET_HOSTS.has(epUrl.hostname)) {
+        return res.status(400).json({
+          error: `Host '${epUrl.hostname}' is not in the target allowlist. Configure ALLOWED_TARGET_HOSTS.`,
+          models: [],
+        });
+      }
+    }
 
     // If no apiKey provided, try to use the saved one from settings
     let effectiveApiKey = apiKey;

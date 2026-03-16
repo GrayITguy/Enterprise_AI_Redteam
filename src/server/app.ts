@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import { authRouter } from "./routes/auth.js";
@@ -18,6 +17,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
 import { logger } from "./utils/logger.js";
 import { startScheduler } from "./services/scheduler.js";
+import { apiLimiter, authLimiter } from "./middleware/rateLimiter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,25 +67,10 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // ─── Rate limiting ────────────────────────────────────────────────────────────
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, please try again later" },
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20, // stricter for auth endpoints
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many authentication attempts, please try again later" },
-});
-
-// Apply rate limiting to all API routes
+// Rate limiters are applied per-router (see each route file) so that CodeQL
+// can verify every route handler is protected.  The global application below
+// provides defense-in-depth for any routes not covered by a router.
 app.use("/api/", apiLimiter);
-// Stricter limits on auth endpoints
 app.use("/api/auth", authLimiter);
 
 // ─── Health check (no auth) ───────────────────────────────────────────────────

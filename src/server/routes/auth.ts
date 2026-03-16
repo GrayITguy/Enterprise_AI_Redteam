@@ -6,8 +6,10 @@ import { db } from "../../db/index.js";
 import { users, inviteCodes } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { generateToken, requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
+import { authLimiter } from "../middleware/rateLimiter.js";
 
 export const authRouter = Router();
+authRouter.use(authLimiter);
 
 const RegisterSchema = z.object({
   email: z.string().email(),

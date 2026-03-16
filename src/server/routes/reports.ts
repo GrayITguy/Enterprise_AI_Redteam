@@ -8,8 +8,10 @@ import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { ReportGenerator } from "../services/reportGenerator.js";
 import { asyncHandler } from "../utils/helpers.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const reportsRouter = Router();
+reportsRouter.use(apiLimiter);
 reportsRouter.use(requireAuth);
 
 const generator = new ReportGenerator();

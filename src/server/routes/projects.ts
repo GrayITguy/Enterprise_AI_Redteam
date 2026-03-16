@@ -6,8 +6,10 @@ import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const projectsRouter = Router();
+projectsRouter.use(apiLimiter);
 projectsRouter.use(requireAuth);
 
 const CreateProjectSchema = z.object({

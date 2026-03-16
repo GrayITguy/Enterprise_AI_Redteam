@@ -8,8 +8,10 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const scansRouter = Router();
+scansRouter.use(apiLimiter);
 scansRouter.use(requireAuth);
 
 const CreateScanSchema = z.object({

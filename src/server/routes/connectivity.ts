@@ -4,9 +4,11 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost, isRunningInDocker } from "../utils/resolveEndpoint.js";
 import { requireAuth } from "../middleware/auth.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
-import { isAllowedHost } from "../utils/urlValidation.js";
+import { ALLOWED_TARGET_HOSTS } from "../utils/urlValidation.js";
+import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const connectivityRouter = Router();
+connectivityRouter.use(apiLimiter);
 connectivityRouter.use(requireAuth);
 
 interface CheckResult {
@@ -38,46 +40,55 @@ connectivityRouter.post("/check", asyncHandler(async (req: Request, res: Respons
     return;
   }
 
-  const result = await checkEndpoint(targetUrl, providerType);
-  res.json(result);
-}));
-
-async function checkEndpoint(
-  targetUrl: string,
-  providerType?: string
-): Promise<CheckResult> {
-  // ── Inline SSRF guard ──────────────────────────────────────────────────
+  // ── Inline SSRF guard (allowlist-based for CodeQL js/request-forgery) ──
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(targetUrl);
   } catch {
-    return {
+    res.json({
       reachable: false,
       latencyMs: 0,
       error: "Invalid URL format",
       suggestion: "Provide a valid http or https URL.",
-    };
+    });
+    return;
   }
 
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    return {
+    res.json({
       reachable: false,
       latencyMs: 0,
       error: "Only http and https URLs are allowed",
       suggestion: "Change the URL scheme to http:// or https://.",
-    };
+    });
+    return;
   }
 
-  if (!isAllowedHost(parsedUrl.hostname)) {
-    return {
+  if (!ALLOWED_TARGET_HOSTS.has(parsedUrl.hostname)) {
+    res.json({
       reachable: false,
       latencyMs: 0,
-      error: "Invalid or disallowed URL",
-      suggestion: "Only http/https URLs to non-internal hosts are allowed.",
-    };
+      error: `Host '${parsedUrl.hostname}' is not in the target allowlist`,
+      suggestion:
+        "Configure the ALLOWED_TARGET_HOSTS environment variable to permit this host.",
+    });
+    return;
   }
   // ── End SSRF guard ─────────────────────────────────────────────────────
 
+  const result = await checkEndpoint(parsedUrl, providerType);
+  res.json(result);
+}));
+
+/**
+ * Internal helper that performs the actual connectivity probe.
+ * Receives a **pre-validated** URL object (hostname already checked against
+ * ALLOWED_TARGET_HOSTS in the route handler above).
+ */
+async function checkEndpoint(
+  parsedUrl: URL,
+  providerType?: string,
+): Promise<CheckResult> {
   // In Docker, localhost refers to the container — resolve to host.docker.internal
   const rawUrl = parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
   const baseUrl = resolveForHost(rawUrl);
@@ -87,7 +98,8 @@ async function checkEndpoint(
   // For Ollama targets, probe the /api/tags endpoint
   if (providerType === "ollama" || baseUrl.includes("11434")) {
     try {
-      const resp = await fetch(`${baseUrl}/api/tags`, {
+      const ollamaTarget = new URL("/api/tags", baseUrl);
+      const resp = await fetch(ollamaTarget, {
         signal: AbortSignal.timeout(5_000),
       });
 
@@ -139,9 +151,10 @@ async function checkEndpoint(
     }
   }
 
-  // Generic endpoint: try a HEAD request, then fall back to GET
+  // Generic endpoint: try a HEAD request
   try {
-    const resp = await fetch(baseUrl, {
+    const genericTarget = new URL(parsedUrl.pathname || "/", baseUrl);
+    const resp = await fetch(genericTarget, {
       method: "HEAD",
       signal: AbortSignal.timeout(5_000),
     });
