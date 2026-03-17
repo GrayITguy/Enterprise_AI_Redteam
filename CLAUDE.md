@@ -151,7 +151,7 @@ The remediation engine and executive summary generator call Claude (via Anthropi
 
 ### License System
 
-Uses RSA key-pair validation. Free-tier limits are enforced in code. Generate keys with `npm run license:keygen`. Keep `keys/` out of version control (already in `.gitignore`).
+Uses RSA key-pair validation. Free-tier limits (5 scans/month, Quick preset only, watermarked PDFs, no email) are defined but not yet fully enforced — enforcement is planned for a future update. Generate keys with `npm run license:keygen`. Keep `keys/` out of version control (already in `.gitignore`).
 
 ## Database
 

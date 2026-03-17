@@ -40,55 +40,39 @@ connectivityRouter.post("/check", asyncHandler(async (req: Request, res: Respons
     return;
   }
 
-  // ── Inline SSRF guard (allowlist-based for CodeQL js/request-forgery) ──
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(targetUrl);
-  } catch {
-    res.json({
-      reachable: false,
-      latencyMs: 0,
-      error: "Invalid URL format",
-      suggestion: "Provide a valid http or https URL.",
-    });
-    return;
-  }
-
-  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    res.json({
-      reachable: false,
-      latencyMs: 0,
-      error: "Only http and https URLs are allowed",
-      suggestion: "Change the URL scheme to http:// or https://.",
-    });
-    return;
-  }
-
-  if (!ALLOWED_TARGET_HOSTS.has(parsedUrl.hostname)) {
-    res.json({
-      reachable: false,
-      latencyMs: 0,
-      error: `Host '${parsedUrl.hostname}' is not in the target allowlist`,
-      suggestion:
-        "Configure the ALLOWED_TARGET_HOSTS environment variable to permit this host.",
-    });
-    return;
-  }
-  // ── End SSRF guard ─────────────────────────────────────────────────────
-
-  const result = await checkEndpoint(parsedUrl, providerType);
+  const result = await checkEndpoint(targetUrl, providerType);
   res.json(result);
 }));
 
 /**
  * Internal helper that performs the actual connectivity probe.
- * Receives a **pre-validated** URL object (hostname already checked against
- * ALLOWED_TARGET_HOSTS in the route handler above).
+ * Validates the URL against ALLOWED_TARGET_HOSTS before making any requests.
  */
 async function checkEndpoint(
-  parsedUrl: URL,
+  targetUrl: string,
   providerType?: string,
 ): Promise<CheckResult> {
+  // ── SSRF guard: validate URL and check hostname allowlist ──
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(targetUrl);
+  } catch {
+    return { reachable: false, latencyMs: 0, error: "Invalid URL format",
+      suggestion: "Provide a valid http or https URL." };
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return { reachable: false, latencyMs: 0, error: "Only http and https URLs are allowed",
+      suggestion: "Change the URL scheme to http:// or https://." };
+  }
+
+  if (!ALLOWED_TARGET_HOSTS.has(parsedUrl.hostname)) {
+    return { reachable: false, latencyMs: 0,
+      error: `Host '${parsedUrl.hostname}' is not in the target allowlist`,
+      suggestion: "Configure the ALLOWED_TARGET_HOSTS environment variable to permit this host." };
+  }
+  // ── End SSRF guard ──
+
   // In Docker, localhost refers to the container — resolve to host.docker.internal
   const rawUrl = parsedUrl.origin + parsedUrl.pathname.replace(/\/+$/, "");
   const baseUrl = resolveForHost(rawUrl);

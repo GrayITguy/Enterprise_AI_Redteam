@@ -1,6 +1,6 @@
 {
   "name": "enterpriseairedteam",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Enterprise AI Red Team Platform - unified self-hosted security testing dashboard",
   "type": "module",
   "scripts": {

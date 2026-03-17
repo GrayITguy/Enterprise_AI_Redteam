@@ -242,6 +242,20 @@ settingsRouter.post(
       }
     }
 
+    // SSRF guard: validate endpoint hostname before passing to testProvider
+    if (endpoint) {
+      let epUrl: URL;
+      try { epUrl = new URL(endpoint); } catch {
+        return res.status(400).json({ success: false, error: "Invalid endpoint URL" });
+      }
+      if (epUrl.protocol !== "http:" && epUrl.protocol !== "https:") {
+        return res.status(400).json({ success: false, error: "Only http/https endpoints are allowed" });
+      }
+      if (!ALLOWED_TARGET_HOSTS.has(epUrl.hostname)) {
+        return res.status(400).json({ success: false, error: `Host '${epUrl.hostname}' is not in the target allowlist` });
+      }
+    }
+
     try {
       const config: Record<string, unknown> = {};
       if (apiKey) config.apiKey = apiKey;
@@ -279,25 +293,6 @@ settingsRouter.post(
 
     const { providerType, endpoint, apiKey } = parsed.data;
 
-    // ── SSRF guard: validate endpoint hostname against allowlist ──────────
-    if (endpoint) {
-      let epUrl: URL;
-      try {
-        epUrl = new URL(endpoint);
-      } catch {
-        return res.status(400).json({ error: "Invalid endpoint URL", models: [] });
-      }
-      if (epUrl.protocol !== "http:" && epUrl.protocol !== "https:") {
-        return res.status(400).json({ error: "Only http/https endpoints are allowed", models: [] });
-      }
-      if (!ALLOWED_TARGET_HOSTS.has(epUrl.hostname)) {
-        return res.status(400).json({
-          error: `Host '${epUrl.hostname}' is not in the target allowlist. Configure ALLOWED_TARGET_HOSTS.`,
-          models: [],
-        });
-      }
-    }
-
     // If no apiKey provided, try to use the saved one from settings
     let effectiveApiKey = apiKey;
     if (!effectiveApiKey) {
@@ -313,6 +308,11 @@ settingsRouter.post(
     try {
       if (providerType === "ollama") {
         const base = resolveForHost((endpoint || "http://localhost:11434").replace(/\/+$/, ""));
+        // SSRF guard: validate final resolved URL hostname
+        const baseHost = new URL(base).hostname;
+        if (!ALLOWED_TARGET_HOSTS.has(baseHost)) {
+          return res.status(400).json({ error: `Host '${baseHost}' is not in the target allowlist`, models: [] });
+        }
         const resp = await fetch(`${base}/api/tags`, {
           signal: AbortSignal.timeout(10_000),
         });
@@ -336,6 +336,11 @@ settingsRouter.post(
         const base = resolveForHost(
           (endpoint || "https://api.openai.com").replace(/\/+$/, "")
         );
+        // SSRF guard: validate final resolved URL hostname
+        const baseHost = new URL(base).hostname;
+        if (!ALLOWED_TARGET_HOSTS.has(baseHost)) {
+          return res.status(400).json({ error: `Host '${baseHost}' is not in the target allowlist`, models: [] });
+        }
         if (!effectiveApiKey && providerType === "openai") {
           return res
             .status(400)
