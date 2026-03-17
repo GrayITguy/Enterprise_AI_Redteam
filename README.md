@@ -1,44 +1,47 @@
 # Enterprise AI Red Team Platform
 
-**The missing unified self-hosted security testing dashboard for AI systems.**
+**Self-hosted AI security testing for teams that can't afford to get it wrong.**
 
-Combines [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://github.com/leondz/garak), [PyRIT](https://github.com/Azure/PyRIT), and [DeepTeam](https://github.com/confident-ai/deepteam) into a single product that security teams will actually use.
+EART consolidates four best-in-class open-source red-teaming tools — [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://github.com/leondz/garak), [PyRIT](https://github.com/Azure/PyRIT), and [DeepTeam](https://github.com/confident-ai/deepteam) — into a single dashboard your security team will actually use.
 
 - **Self-hosted** — your data never leaves your infrastructure
-- **Air-gapped ready** — works with Ollama, no mandatory cloud
+- **Air-gapped ready** — works with Ollama, no mandatory cloud calls
 - **One command install** — `bash scripts/install.sh` handles everything
 - **60 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
 
+<img width="815" height="395" alt="Dashboard" src="https://github.com/user-attachments/assets/c98fea31-9d4a-4346-93c2-4ef0bdd48bb1" />
+<img width="812" height="370" alt="Scan Builder" src="https://github.com/user-attachments/assets/9e79717f-41d8-4262-9be7-ede11e7b25e4" />
+<img width="816" height="394" alt="Results" src="https://github.com/user-attachments/assets/b88b614a-747f-48d6-b7f4-b22f453896e3" />
+<img width="815" height="391" alt="Remediation" src="https://github.com/user-attachments/assets/1b0ed29b-f58f-43c8-9523-a8be403fa0ab" />
+
 ---
 
-## Features
+## Free vs Pro
 
-- **Dashboard** — severity charts, pass-rate trend (last 30 scans), upcoming scans widget, and a notification badge showing newly completed scans
-- **Scan Builder** — 60-plugin catalog with full-text search and severity filters; choose from Quick, OWASP, or Full presets or hand-pick plugins; pre-flight connectivity check with green/amber/red status
-- **Scan Scheduler** — schedule one-off or recurring scans (daily / weekly / monthly) with email notifications (always / failure-only / never)
-- **Results & AI Summary** — per-finding details with prompt/response/evidence, OWASP radar chart, tool breakdown, and an AI-powered executive summary
-- **Remediation Engine** — AI-generated remediation plans with risk scoring (0–100), root-cause analysis per OWASP category, copy-pasteable system-prompt hardening, guardrail configs, and one-click verification re-scans — works fully offline via local Ollama
-- **Settings (admin)** — configure a default AI provider for remediation & summaries (Ollama, OpenAI, Anthropic, or custom endpoint with model auto-detection), and SMTP for email notifications — all from the web UI
-- **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` AI endpoints are automatically bridged into Docker-sandboxed workers without manual network configuration
-- **Reports** — generate and download PDF or JSON reports per scan
-- **License Management** — free tier included; activate a commercial license key for unlimited concurrent scans
-- **Team Access** — JWT-based auth with admin / analyst / viewer roles and invite-code registration
-<img width="815" height="395" alt="image" src="https://github.com/user-attachments/assets/c98fea31-9d4a-4346-93c2-4ef0bdd48bb1" />
-<img width="812" height="370" alt="image" src="https://github.com/user-attachments/assets/9e79717f-41d8-4262-9be7-ede11e7b25e4" />
-<img width="816" height="394" alt="image" src="https://github.com/user-attachments/assets/b88b614a-747f-48d6-b7f4-b22f453896e3" />
-<img width="815" height="391" alt="image" src="https://github.com/user-attachments/assets/1b0ed29b-f58f-43c8-9523-a8be403fa0ab" />
+EART is fully functional on the free tier. A one-time license key unlocks everything.
 
+| | Free | Pro ($79 one-time) |
+|---|---|---|
+| Scans per month | 5 | Unlimited |
+| Scan presets | Quick (10 plugins) | Quick + OWASP + Full (60 plugins) |
+| PDF reports | Watermarked | Clean |
+| Email notifications | — | Included |
+| AI remediation engine | Included | Included |
+| Ollama / local models | Included | Included |
+| Team roles (admin/analyst/viewer) | Included | Included |
 
+[Purchase a license at enterpriseairedteam.com](https://enterpriseairedteam.com)
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-- Docker + Docker Compose v2
-- 4 GB RAM minimum (8 GB recommended for running local models)
 
-### One-command install (Linux / macOS)
+- Docker + Docker Compose v2
+- 4 GB RAM minimum (8 GB recommended for local models)
+
+### Linux / macOS
 
 ```bash
 git clone https://github.com/grayitguy/enterpriseairedteam.git
@@ -46,40 +49,31 @@ cd enterpriseairedteam
 bash scripts/install.sh
 ```
 
-The installer:
-1. Checks Docker is available and running
-2. Generates `.env` with a secure random `JWT_SECRET`
-3. Builds all Docker images — app, worker, and all three Python security tool images
-4. Starts all services and waits for the health check
-
-Visit **http://localhost:15500** and complete the setup wizard to create your admin account.
-
-### Windows install
+### Windows
 
 ```bat
-git clone https://github.com/yourusername/enterpriseairedteam.git
+git clone https://github.com/grayitguy/enterpriseairedteam.git
 cd enterpriseairedteam
 scripts\install.bat
 ```
 
-### Manual install
+### Manual
 
 ```bash
-git clone https://github.com/yourusername/enterpriseairedteam.git
+git clone https://github.com/grayitguy/enterpriseairedteam.git
 cd enterpriseairedteam
-cp .env.example .env
-# Edit .env — set a strong JWT_SECRET (openssl rand -hex 32)
+cp .env.example .env        # Edit .env — set JWT_SECRET (openssl rand -hex 32)
 mkdir -p data/reports keys logs
-docker compose build   # builds app + all Python security workers
+docker compose build
 docker compose up -d
 ```
 
-### (Optional) Run local AI models with Ollama
+Visit **http://localhost:15500** and complete the setup wizard.
+
+### (Optional) Local AI with Ollama
 
 ```bash
 docker compose --profile local-ai up -d
-
-# Pull a model (inside Ollama container or host)
 docker exec eart-ollama ollama pull llama3
 ```
 
@@ -87,35 +81,42 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 
 ---
 
-## Development Mode
+## Features
 
-### Prerequisites
-- Node.js 20+
-- Redis (`docker run -d -p 6379:6379 redis:7-alpine`)
+- **Dashboard** — severity charts, 30-scan pass-rate trend, upcoming scans widget, notification badge
+- **Scan Builder** — 60-plugin catalog with search and severity filters; Quick, OWASP, and Full presets; pre-flight connectivity check
+- **Scan Scheduler** — one-off or recurring scans (daily / weekly / monthly) with email notifications
+- **Results & AI Summary** — per-finding detail with prompt/response/evidence, OWASP radar chart, AI-generated executive summary
+- **Remediation Engine** — AI-generated remediation plans, risk scoring (0-100), root-cause analysis, copy-pasteable hardening configs, one-click verification re-scans — works fully offline via Ollama
+- **Settings** — configure AI provider (Ollama, OpenAI, Anthropic, or custom endpoint with model auto-detection) and SMTP from the web UI
+- **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` endpoints automatically bridged into Docker workers
+- **Reports** — PDF and JSON export per scan
+- **Team Access** — JWT auth with admin / analyst / viewer roles and invite-code registration
+- **License Management** — free tier included; activate a key to unlock unlimited scans
 
-```bash
-# Install dependencies
-npm install
-cd site && npm install && cd ..
+---
 
-# Copy and configure env
-cp .env.example .env
+## Scan Presets
 
-# Create data directory and run DB migrations
-mkdir -p data/reports keys logs
-npm run db:migrate
+| Preset | Plugins | Coverage |
+|--------|---------|----------|
+| Quick | 10 | Core vulnerabilities — prompt injection, jailbreaks, PII, toxicity |
+| OWASP | 22 | All 10 OWASP LLM Top 10 categories |
+| Full | 60 | Every plugin across Promptfoo, Garak, PyRIT, and DeepTeam |
 
-# Start backend (port 3000)
-npm run dev
+---
 
-# In a separate terminal: start frontend (port 5173)
-cd site && npm run dev
+## Tech Stack
 
-# In a separate terminal: start BullMQ worker
-npm run dev:worker
-```
-
-Visit **http://localhost:5173** (dev) — proxied to backend at :3000.
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js 22, Express 5, TypeScript (strict) |
+| Frontend | React 19, Vite 7, Tailwind CSS 4, Radix UI |
+| Database | SQLite (default) or PostgreSQL via Drizzle ORM |
+| Job Queue | BullMQ + Redis 7 |
+| AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
+| Python Workers | Garak 0.14+, PyRIT 0.11+, DeepTeam — Docker containers |
+| Auth | JWT + bcrypt; roles: admin / analyst / viewer |
 
 ---
 
@@ -129,10 +130,9 @@ Express (Node.js + TypeScript) — port 3000 (15500 external)
     │
     ├── Drizzle ORM → SQLite (./data/eart.db) [or Postgres]
     ├── BullMQ → Redis (scan job queue)
-    ├── Scheduler → polls every 5 min for due recurring scans
-    ├── Nodemailer → SMTP (env vars or admin-configured via Settings)
+    ├── Scheduler → polls every 5 min for recurring scans
+    ├── Nodemailer → SMTP (env vars or admin-configured)
     ├── AI Provider → shared service for remediation & summaries
-    │                  (admin Settings provider → project provider → ANTHROPIC_API_KEY)
     ├── Endpoint Gateway → reverse proxy bridging localhost → Docker
     └── docker run --rm → Python workers (JSONL stdio)
                               ├── eart-garak:latest
@@ -156,65 +156,50 @@ Workers communicate via JSONL over Docker stdio:
 
 ---
 
-## Folder Structure
+## Development Mode
 
+### Prerequisites
+
+- Node.js 22+
+- Redis (`docker run -d -p 6379:6379 redis:7-alpine`)
+
+```bash
+npm install && cd site && npm install && cd ..
+cp .env.example .env
+mkdir -p data/reports keys logs
+npm run db:migrate
+
+# Three terminals:
+npm run dev              # Backend on :3000
+cd site && npm run dev   # Frontend on :5173
+npm run dev:worker       # BullMQ worker
 ```
-enterpriseairedteam/
-├── docker-compose.yml          # All services
-├── Dockerfile                  # Multi-stage build
-├── package.json                # Backend deps + scripts
-├── tsconfig.json
-├── .env.example
-├── src/
-│   ├── server/
-│   │   ├── app.ts              # Express entry point
-│   │   ├── config/
-│   │   │   ├── pluginCatalog.ts   # 60 plugins + presets
-│   │   │   ├── attackPatterns.ts  # Adversarial attack library (PLUGIN_ATTACKS)
-│   │   │   └── constants.ts       # Shared backend constants (OWASP_NAMES)
-│   │   ├── middleware/
-│   │   │   ├── auth.ts          # JWT middleware
-│   │   │   └── errorHandler.ts
-│   │   ├── routes/             # API route handlers
-│   │   │   ├── remediation.ts  # AI remediation + verify re-scans
-│   │   │   ├── settings.ts     # SMTP + Remediation provider config
-│   │   │   ├── connectivity.ts # Pre-flight endpoint reachability check
-│   │   │   └── ...
-│   │   ├── services/           # Business logic
-│   │   │   ├── scanner.ts      # Scan orchestrator
-│   │   │   ├── dockerRunner.ts # Python worker spawner
-│   │   │   ├── aiProvider.ts   # Shared AI provider resolution
-│   │   │   ├── emailService.ts # Nodemailer notifications (env + DB config)
-│   │   │   ├── settingsService.ts # Encrypted key-value settings store
-│   │   │   ├── endpointGateway.ts # Reverse proxy: localhost → Docker
-│   │   │   ├── ollamaRelay.ts  # Browser relay for Ollama
-│   │   │   ├── scheduler.ts    # Recurring scan scheduler
-│   │   │   └── reportGenerator.ts
-│   │   ├── utils/
-│   │   │   ├── resolveEndpoint.ts # Docker-aware URL rewriting
-│   │   │   ├── helpers.ts         # Shared utilities (isLocalhostUrl, safeJsonParse)
-│   │   │   ├── tokenBudget.ts     # Token estimation + context-window budget
-│   │   │   └── logger.ts          # Application logger
-│   │   └── workers/
-│   │       └── scanWorker.ts   # BullMQ worker process
-│   ├── db/
-│   │   ├── schema.ts           # Drizzle table definitions (incl. appSettings)
-│   │   └── index.ts
-│   └── license-validator.ts    # Offline RSA license check
-├── site/                       # React frontend (Vite)
-│   └── src/
-│       ├── lib/
-│       │   ├── api.ts              # Axios instance + API helpers
-│       │   ├── constants.ts        # Shared UI constants (SEVERITY_ORDER, SEVERITY_COLORS, OWASP_NAMES)
-│       │   └── utils.ts            # Misc frontend utilities
-│       ├── pages/              # Dashboard, ScanBuilder, Results,
-│       │                       # Remediation, Reports, Settings, …
-│       └── components/
-└── python-workers/
-    ├── garak/                  # Garak runner container
-    ├── pyrit/                  # PyRIT runner container
-    └── deepteam/               # DeepTeam runner container
-```
+
+Visit **http://localhost:5173** — proxied to backend at :3000.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | *(required)* | Secret for JWT signing — `openssl rand -hex 64` |
+| `DATABASE_URL` | `./data/eart.db` | SQLite path or Postgres URL |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
+| `REPORT_DIR` | `./data/reports` | PDF/JSON report storage |
+| `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
+| `ANTHROPIC_API_KEY` | — | Cloud fallback for AI features (not required with Ollama or Settings-configured provider) |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Anthropic model when using API key fallback |
+| `OLLAMA_URL` | *(auto-detected)* | Override Ollama endpoint for Docker deployments |
+| `OLLAMA_TIMEOUT` | `900` | Ollama request timeout in seconds (15 min default) |
+| `SMTP_HOST` | — | SMTP server (also configurable via Settings UI) |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USER` / `SMTP_PASS` | — | SMTP credentials |
+| `SMTP_FROM` | — | From address for notifications |
+| `CORS_ORIGIN` | `*` | Allowed CORS origin(s) |
+| `GARAK_IMAGE` | `eart-garak:latest` | Garak Docker image |
+| `PYRIT_IMAGE` | `eart-pyrit:latest` | PyRIT Docker image |
+| `DEEPTEAM_IMAGE` | `eart-deepteam:latest` | DeepTeam Docker image |
 
 ---
 
@@ -227,14 +212,14 @@ enterpriseairedteam/
 | POST | `/api/auth/register` | Register with invite code |
 | POST | `/api/auth/login` | Login → JWT |
 | GET | `/api/auth/me` | Current user |
-| POST | `/api/auth/invite` | Generate invite code (admin only) |
+| POST | `/api/auth/invite` | Generate invite code (admin) |
 
 ### Projects
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/projects` | List projects |
 | POST | `/api/projects` | Create project |
-| GET | `/api/projects/:id` | Get project details |
+| GET | `/api/projects/:id` | Get project |
 | PATCH | `/api/projects/:id` | Update project |
 | DELETE | `/api/projects/:id` | Archive project |
 
@@ -242,9 +227,9 @@ enterpriseairedteam/
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/scans/catalog` | Plugin catalog + presets |
-| GET | `/api/scans/stats` | Aggregated severity statistics |
-| GET | `/api/scans/history` | Last 30 completed scans (trend chart data) |
-| GET | `/api/scans/upcoming` | Scheduled & recurring scans widget |
+| GET | `/api/scans/stats` | Aggregated severity stats |
+| GET | `/api/scans/history` | Last 30 scans (trend data) |
+| GET | `/api/scans/upcoming` | Scheduled & recurring scans |
 | GET | `/api/scans` | List all scans |
 | POST | `/api/scans` | Create + queue scan |
 | GET | `/api/scans/:id` | Scan status |
@@ -254,127 +239,61 @@ enterpriseairedteam/
 ### Results
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/results/scans/:scanId/summary` | Scan summary statistics |
+| GET | `/api/results/scans/:scanId/summary` | Scan summary stats |
 | POST | `/api/results/scans/:scanId/narrative` | Generate AI executive summary |
 
 ### Remediation
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/remediation/scans/:scanId/generate` | Generate AI remediation plan |
-| POST | `/api/remediation/scans/:scanId/verify` | Re-run only failed plugins to verify fixes |
+| POST | `/api/remediation/scans/:scanId/verify` | Re-run failed plugins to verify fixes |
 
 ### Reports
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/reports/:scanId` | List reports for a scan |
 | POST | `/api/reports/:scanId/generate` | Generate PDF/JSON report |
-| GET | `/api/reports/:scanId/download/:reportId` | Download report file |
+| GET | `/api/reports/:scanId/download/:reportId` | Download report |
 
 ### Settings (admin)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/settings/smtp` | SMTP configuration (password redacted) |
+| GET | `/api/settings/smtp` | SMTP config (password redacted) |
 | PUT | `/api/settings/smtp` | Save SMTP settings |
-| POST | `/api/settings/smtp/test` | Send a test email |
-| GET | `/api/settings/remediation` | AI remediation provider config (API key redacted) |
-| PUT | `/api/settings/remediation` | Save remediation provider settings |
-| POST | `/api/settings/models` | Auto-detect available models for a provider |
+| POST | `/api/settings/smtp/test` | Send test email |
+| GET | `/api/settings/remediation` | AI provider config (key redacted) |
+| PUT | `/api/settings/remediation` | Save AI provider settings |
+| POST | `/api/settings/models` | Auto-detect models for provider |
 
 ### Connectivity
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/connectivity/check` | Pre-flight endpoint reachability + latency check |
+| POST | `/api/connectivity/check` | Pre-flight endpoint reachability check |
 
 ### License
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/license` | Check license status |
-| POST | `/api/license/activate` | Activate a license key |
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | (required) | Secret for JWT signing — use `openssl rand -hex 64` |
-| `DATABASE_URL` | `./data/eart.db` | SQLite path or Postgres URL |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
-| `REPORT_DIR` | `./data/reports` | Where PDF/JSON reports are stored |
-| `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
-| `ANTHROPIC_API_KEY` | — | Cloud fallback for AI summaries and remediation. Not required when a provider is configured in Settings or when using Ollama/OpenAI via project config |
-| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Model to use when falling back to Anthropic API |
-| `SMTP_HOST` | — | SMTP server for email notifications (can also be set via Settings UI) |
-| `SMTP_PORT` | `587` | SMTP port (can also be set via Settings UI) |
-| `SMTP_USER` | — | SMTP username (can also be set via Settings UI) |
-| `SMTP_PASS` | — | SMTP password (can also be set via Settings UI) |
-| `SMTP_FROM` | — | From address for notification emails (can also be set via Settings UI) |
-| `CORS_ORIGIN` | `*` | Allowed CORS origin(s) |
-| `OLLAMA_URL` | — | Override Ollama endpoint for Docker deployments (auto-detected when unset) |
-| `EART_APP_URL` | — | Internal URL for worker→app communication (set automatically in docker-compose) |
-
----
-
-## Scan Presets
-
-| Preset | Plugins | Description |
-|--------|---------|-------------|
-| `quick` | 8 | Core vulnerability check — under 5 min |
-| `owasp` | 20 | Full OWASP LLM Top 10 coverage |
-| `full` | 41 | Everything — all 4 tools, all categories |
+| GET | `/api/license` | License status |
+| POST | `/api/license/activate` | Activate license key |
 
 ---
 
 ## Testing
 
-EART has a full test suite across all layers.
-
-### Backend tests (unit + integration)
-
 ```bash
-npm test                    # run all tests once
+# Backend
+npm test                    # all tests
 npm run test:watch          # watch mode
-npm run test:coverage       # with coverage report
-```
+npm run test:coverage       # with coverage
 
-Tests use Vitest with an in-memory SQLite database — no Redis or Docker required.
+# Frontend
+cd site && npm test
 
-### Frontend tests
-
-```bash
-cd site
-npm test                    # run all component tests
-npm run test:watch          # watch mode
-```
-
-Tests use Vitest + React Testing Library in a jsdom environment.
-
-### End-to-end tests
-
-```bash
-# Start the dev servers first:
-npm run dev &
-cd site && npm run dev &
-
-# Then run E2E tests:
+# E2E (start dev servers first)
 npm run test:e2e
 ```
 
-E2E tests use Playwright against the live dev servers.
-
-### CI
-
-GitHub Actions runs type-check, backend tests, frontend tests, and a full build on every push and pull request. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-
----
-
-## Contributing
-
-1. Fork the repository and create a feature branch
-2. Make your changes with tests
-3. Run `npm test && cd site && npm test` to verify
-4. Ensure `npm run build:all` succeeds
-5. Open a pull request
+CI runs type-check, tests, and build on every push/PR. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 
@@ -382,4 +301,6 @@ GitHub Actions runs type-check, backend tests, frontend tests, and a full build 
 
 MIT License — see [LICENSE](LICENSE).
 
-A commercial license key unlocks unlimited concurrent scans and removes the "Powered by EART" footer. [Purchase at enterpriseairedteam.com](https://enterpriseairedteam.com).
+EART is open source. The free tier is fully functional. A one-time commercial license key ($79) unlocks unlimited scans, all presets, clean PDF reports, and email notifications.
+
+[Purchase at enterpriseairedteam.com](https://enterpriseairedteam.com)
