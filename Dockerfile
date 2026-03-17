@@ -45,6 +45,9 @@ RUN apk add --no-cache docker-cli wget
 
 WORKDIR /app
 
+# package.json is needed at runtime so Node.js sees "type": "module"
+COPY package.json ./
+
 # Copy pre-built production node_modules (native bindings already compiled)
 COPY --from=prod-deps /app/node_modules ./node_modules
 
