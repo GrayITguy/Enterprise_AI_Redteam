@@ -64,6 +64,7 @@
   },
   "overrides": {
     "esbuild": ">=0.25.0",
-    "fast-xml-parser": ">=5.5.6"
+    "fast-xml-parser": ">=5.5.6",
+    "socket.io-parser": ">=4.2.6"
   }
 }
