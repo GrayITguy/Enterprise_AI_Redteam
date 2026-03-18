@@ -99,7 +99,7 @@ if (process.env.NODE_ENV === "production") {
   const siteDir = path.join(__dirname, "../../site/dist");
   app.use(express.static(siteDir));
   // SPA fallback — all non-API routes serve index.html
-  app.get("*", apiLimiter, (req, res, next) => {
+  app.use((req, res, next) => {
     if (req.path.startsWith("/api")) return next();
     res.sendFile(path.join(siteDir, "index.html"));
   });
