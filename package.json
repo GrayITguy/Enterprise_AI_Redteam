@@ -63,6 +63,7 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-    "esbuild": ">=0.25.0"
+    "esbuild": ">=0.25.0",
+    "fast-xml-parser": ">=5.5.6"
   }
 }
