@@ -137,6 +137,16 @@ Express (Node.js + TypeScript) — port 3000 (15500 external)
                               └── eart-deepteam:latest
 ```
 
+### Which engines actually run
+
+To be precise about what each tool does under the hood:
+
+| Engine | Status |
+|--------|--------|
+| **Promptfoo** | Runs directly — real attack plugins evaluated against the target. |
+| **Garak** | **Runs the real [garak](https://github.com/NVIDIA/garak) tool** — the worker drives garak's probes against your target via its REST generator and reports garak's own detector verdicts. |
+| **PyRIT / DeepTeam** | Currently run EART's own built-in probes modelled on those tools (real-engine integration is on the roadmap). |
+
 ### Python Worker Protocol
 
 Workers communicate via JSONL over Docker stdio:
