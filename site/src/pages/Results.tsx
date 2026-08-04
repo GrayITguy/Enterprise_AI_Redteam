@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
@@ -6,6 +6,7 @@ import type {
   ScanResult,
   ResultsSummary,
   PaginatedScanResults,
+  ScanDiff,
   NarrativeResponse,
   ReportGenerateResponse,
 } from "@/types/api";
@@ -121,6 +122,20 @@ export default function Results() {
   const results = page?.results ?? [];
   const total = summary?.total ?? page?.total ?? results.length;
 
+  // When arriving from a remediation "Verify Fixes" action, `?original=<id>`
+  // links this retest to the scan it re-tested; fetch the before/after diff.
+  const [searchParams] = useSearchParams();
+  const originalScanId = searchParams.get("original");
+  const { data: diff } = useQuery({
+    queryKey: ["scan-diff", scanId, originalScanId],
+    enabled: !!originalScanId,
+    queryFn: () =>
+      api
+        .get(`/scans/${scanId}/diff`, { params: { original: originalScanId } })
+        .then((r) => r.data as ScanDiff),
+    refetchInterval: scan?.status === "running" ? 5000 : false,
+  });
+
   const reportMutation = useMutation({
     mutationFn: () =>
       api.post(`/reports/${scanId}/generate`, { format: "pdf" }),
@@ -206,6 +221,55 @@ export default function Results() {
           </Button>
         </div>
       </div>
+
+      {/* Remediation before/after comparison (retest) */}
+      {diff && (
+        <Card style={{ borderColor: "rgba(34,197,94,0.4)" }}>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              Remediation retest — before vs. after
+              {diff.summary.retestStatus === "running" && (
+                <span className="text-xs font-normal text-muted-foreground">· retest in progress…</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-4 text-sm">
+              <span className="text-green-600 font-semibold">{diff.summary.fixed} fixed</span>
+              <span className="text-amber-600 font-semibold">{diff.summary.improved} improved</span>
+              <span className="text-red-600 font-semibold">{diff.summary.unchanged} unchanged</span>
+              <span className="text-muted-foreground">
+                {diff.summary.beforeFailed} → {diff.summary.afterFailed} failing findings
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {diff.categories.map((c) => {
+                const color =
+                  c.status === "fixed" ? "#16a34a"
+                    : c.status === "improved" ? "#d97706"
+                    : c.status === "not-retested" ? "#9ca3af"
+                    : "#dc2626";
+                const label =
+                  c.status === "not-retested" ? "not retested" : c.status;
+                return (
+                  <div key={c.category} className="flex items-center justify-between text-sm border-b py-1 last:border-0">
+                    <span className="truncate pr-2">{c.name}</span>
+                    <span className="flex items-center gap-3 shrink-0">
+                      <span className="text-muted-foreground tabular-nums">
+                        {c.beforeFailed} → {c.afterFailed ?? "—"}
+                      </span>
+                      <span className="font-semibold uppercase text-xs" style={{ color }}>{label}</span>
+                    </span>
+                  </div>
+                );
+              })}
+              {diff.categories.length === 0 && (
+                <p className="text-sm text-muted-foreground">No failing categories to compare.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Severity summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

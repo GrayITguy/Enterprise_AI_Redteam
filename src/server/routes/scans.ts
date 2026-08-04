@@ -9,6 +9,7 @@ import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
 import { publishCancel } from "../services/scanControl.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import { OWASP_NAMES } from "../config/constants.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const scansRouter = Router();
@@ -293,6 +294,75 @@ scansRouter.get("/:id/results", asyncHandler(async (req: AuthenticatedRequest, r
     limit,
     offset,
   });
+}));
+
+// ─── GET /api/scans/:id/diff?original=<scanId> ────────────────────────────────
+// Before/after comparison between a remediation retest (`:id`) and the original
+// scan it re-tested, grouped by OWASP category — so a user can see which
+// categories were fixed after applying the remediation guidance.
+scansRouter.get("/:id/diff", asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const originalId = String(req.query.original ?? "");
+  if (!originalId) {
+    return res.status(400).json({ error: "The 'original' query parameter is required" });
+  }
+
+  // Both scans must belong to the requesting user.
+  const [retest, original] = await Promise.all([
+    db.select({ id: scans.id, status: scans.status })
+      .from(scans)
+      .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
+      .get(),
+    db.select({ id: scans.id })
+      .from(scans)
+      .where(and(eq(scans.id, originalId), eq(scans.userId, req.user!.id)))
+      .get(),
+  ]);
+  if (!retest || !original) return res.status(404).json({ error: "Scan not found" });
+
+  const failedExpr = sql<number>`sum(case when ${scanResults.passed} = 0 then 1 else 0 end)`;
+  const groupByCategory = (scanId: string) =>
+    db.select({ cat: scanResults.owaspCategory, failed: failedExpr })
+      .from(scanResults)
+      .where(eq(scanResults.scanId, scanId))
+      .groupBy(scanResults.owaspCategory)
+      .all();
+
+  const [origRows, retestRows] = await Promise.all([
+    groupByCategory(originalId),
+    groupByCategory(req.params.id),
+  ]);
+
+  const retestFailedByCat = new Map<string, number>(
+    retestRows.map((r) => [r.cat ?? "Other", Number(r.failed)])
+  );
+
+  const categories: Array<{
+    category: string; name: string; beforeFailed: number;
+    afterFailed: number | null; status: "fixed" | "improved" | "unchanged" | "not-retested";
+  }> = [];
+  for (const r of origRows) {
+    const beforeFailed = Number(r.failed);
+    if (beforeFailed === 0) continue; // only categories that originally failed
+    const cat = r.cat ?? "Other";
+    const afterFailed = retestFailedByCat.has(cat) ? retestFailedByCat.get(cat)! : null;
+    const status =
+      afterFailed == null ? "not-retested"
+        : afterFailed === 0 ? "fixed"
+        : afterFailed < beforeFailed ? "improved"
+        : "unchanged";
+    categories.push({ category: cat, name: OWASP_NAMES[cat] ?? cat, beforeFailed, afterFailed, status });
+  }
+
+  const summary = {
+    fixed: categories.filter((c) => c.status === "fixed").length,
+    improved: categories.filter((c) => c.status === "improved").length,
+    unchanged: categories.filter((c) => c.status === "unchanged").length,
+    beforeFailed: categories.reduce((n, c) => n + c.beforeFailed, 0),
+    afterFailed: categories.reduce((n, c) => n + (c.afterFailed ?? c.beforeFailed), 0),
+    retestStatus: retest.status,
+  };
+
+  return res.json({ originalScanId: originalId, retestScanId: req.params.id, categories, summary });
 }));
 
 // ─── POST /api/scans/:id/cancel ───────────────────────────────────────────────
