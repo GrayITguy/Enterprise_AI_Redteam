@@ -22,6 +22,7 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Prompt, cross-process scan cancellation.** Cancelling a scan now publishes a Redis pub/sub signal that the worker acts on immediately — aborting the in-flight tool and killing its Docker container mid-run — instead of only being noticed between tools by DB-status polling. The signal fans out to every worker replica, so cancellation works when the app and worker (or multiple workers) run as separate processes. Persisted scan status remains the durable source of truth and the polling fallback still guarantees eventual cancellation if a subscriber is momentarily disconnected.
 
 ### Security
+- **Docker socket hardening + non-root containers.** The app and worker no longer bind-mount `/var/run/docker.sock`. Instead a dedicated `tecnativa/docker-socket-proxy` service mounts the socket (read-only) and exposes only the container/image endpoints the workers need (`CONTAINERS`/`IMAGES`/`POST`), so a compromised app can't reach the full host Docker API (exec into other containers, secrets, swarm, volumes). The runtime image also now runs as a non-root `eart` user, with an entrypoint that fixes volume ownership before dropping privileges.
 - **Report download hardening.** The file-path containment check now uses a separator-terminated match (a sibling like `<dir>-evil` no longer passes), and the download filename is built from the report's own sanitized scan id rather than the raw URL parameter.
 
 ---

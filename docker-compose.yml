@@ -2,6 +2,28 @@
 
 services:
   # ─────────────────────────────────────────
+  # Docker socket proxy — the app/worker talk to the Docker API through this
+  # instead of mounting /var/run/docker.sock directly. It exposes only the
+  # container + image endpoints needed to run Python worker containers, so a
+  # compromise of the app can't reach the full host Docker API (secrets, exec
+  # into other containers, swarm, etc.). This is the ONLY service that mounts
+  # the socket, and it never publishes a host port.
+  # ─────────────────────────────────────────
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: eart-socket-proxy
+    environment:
+      # Grant only what `docker run --rm` / `docker kill` need.
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      # Everything else stays denied (default 0): EXEC, VOLUMES, NETWORKS,
+      # SECRETS, SWARM, SERVICES, INFO, AUTH, etc.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
   # Main application server (Express + React SPA)
   # ─────────────────────────────────────────
   app:
@@ -31,12 +53,15 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@enterpriseairedteam.com}
+      # Talk to Docker through the socket proxy, not a mounted socket.
+      DOCKER_HOST: tcp://socket-proxy:2375
     volumes:
       - app-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy
+      socket-proxy:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
@@ -68,14 +93,17 @@ services:
       EART_APP_URL: http://app:3000
       # Shared with the app for any token verification the worker may perform.
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-a-64-char-random-string}
+      # Talk to Docker through the socket proxy, not a mounted socket.
+      DOCKER_HOST: tcp://socket-proxy:2375
     volumes:
       - app-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       redis:
         condition: service_healthy
       app:
         condition: service_healthy
+      socket-proxy:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e 'process.exit(0)'"]

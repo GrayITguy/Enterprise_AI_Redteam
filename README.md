@@ -61,6 +61,13 @@ docker compose up -d
 
 Visit **http://localhost:15500** and complete the setup wizard.
 
+> **Container hardening.** The app and worker run as a non-root user and reach
+> the Docker API through a restricted [socket proxy](https://github.com/Tecnativa/docker-socket-proxy)
+> (only the container/image endpoints needed to launch Python workers) rather
+> than bind-mounting `/var/run/docker.sock` directly, so a compromise of the app
+> can't drive the full host Docker API. The proxy is the only service that
+> touches the socket, and it publishes no host port.
+
 ### (Optional) Local AI with Ollama
 
 ```bash
