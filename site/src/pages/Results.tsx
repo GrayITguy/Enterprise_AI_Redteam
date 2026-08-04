@@ -1,7 +1,14 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ScanDetail, ScanResult, NarrativeResponse, ReportGenerateResponse } from "@/types/api";
+import type {
+  ScanDetail,
+  ScanResult,
+  ResultsSummary,
+  PaginatedScanResults,
+  NarrativeResponse,
+  ReportGenerateResponse,
+} from "@/types/api";
 import { apiErrorMessage } from "@/types/api";
 import { downloadFile } from "@/lib/downloadFile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +23,7 @@ import { Download, Filter, ChevronDown, ChevronRight, Shield, Sparkles, AlertCir
 import { useState } from "react";
 import { SEVERITY_ORDER, SEVERITY_COLORS, OWASP_NAMES } from "@/lib/constants";
 
-function FindingRow({ result }: { result: any }) {
+function FindingRow({ result }: { result: ScanResult }) {
   const [expanded, setExpanded] = useState(false);
   const color = SEVERITY_COLORS[result.severity] ?? "#6b7280";
   return (
@@ -86,16 +93,33 @@ export default function Results() {
 
   const [narrative, setNarrative] = useState<string | null>(null);
 
+  // How many findings to request (raised by the "Load more" button).
+  const [limit, setLimit] = useState(200);
+
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as ScanDetail),
   });
 
-  const { data: results = [], isLoading } = useQuery({
-    queryKey: ["scan-results", scanId],
-    queryFn: () => api.get(`/scans/${scanId}/results`).then((r) => r.data as ScanResult[]),
+  // Aggregate stats are computed server-side (SQL) so the charts stay correct
+  // and cheap no matter how many findings a scan produced.
+  const { data: summary } = useQuery({
+    queryKey: ["scan-summary", scanId],
+    queryFn: () =>
+      api.get(`/results/scans/${scanId}/summary`).then((r) => r.data as ResultsSummary),
     refetchInterval: scan?.status === "running" ? 5000 : false,
   });
+
+  const { data: page, isLoading } = useQuery({
+    queryKey: ["scan-results", scanId, limit],
+    queryFn: () =>
+      api
+        .get(`/scans/${scanId}/results`, { params: { limit } })
+        .then((r) => r.data as PaginatedScanResults),
+    refetchInterval: scan?.status === "running" ? 5000 : false,
+  });
+  const results = page?.results ?? [];
+  const total = summary?.total ?? page?.total ?? results.length;
 
   const reportMutation = useMutation({
     mutationFn: () =>
@@ -123,22 +147,25 @@ export default function Results() {
     );
   }
 
+  // Charts/cards derive from the server-side aggregate summary (scalable), not
+  // the current findings page.
   const bySeverity = ["critical", "high", "medium", "low", "info"].map((sev) => ({
     name: sev.charAt(0).toUpperCase() + sev.slice(1),
-    count: results.filter((r) => r.severity === sev && !r.passed).length,
+    count: summary?.bySeverity?.[sev as keyof ResultsSummary["bySeverity"]] ?? 0,
     fill: SEVERITY_COLORS[sev],
   }));
 
-  const byTool = ["promptfoo", "garak", "pyrit", "deepteam"].map((tool) => {
-    const tr = results.filter((r) => r.tool === tool);
-    return { tool, total: tr.length, failed: tr.filter((r) => !r.passed).length };
-  }).filter((t) => t.total > 0);
+  const byTool = ["promptfoo", "garak", "pyrit", "deepteam"]
+    .map((tool) => ({
+      tool,
+      total: summary?.byTool?.[tool]?.total ?? 0,
+      failed: summary?.byTool?.[tool]?.failed ?? 0,
+    }))
+    .filter((t) => t.total > 0);
 
   const owaspData = Object.keys(OWASP_NAMES).map((cat) => {
-    const catResults = results.filter((r) => r.owaspCategory === cat);
-    const failRate = catResults.length > 0
-      ? Math.round((catResults.filter((r) => !r.passed).length / catResults.length) * 100)
-      : 0;
+    const c = summary?.byOwaspCategory?.[cat];
+    const failRate = c && c.total > 0 ? Math.round((c.failed / c.total) * 100) : 0;
     return { category: cat, fullName: OWASP_NAMES[cat], failRate };
   });
 
@@ -156,7 +183,7 @@ export default function Results() {
         <div>
           <h1 className="text-2xl font-bold">Scan Results</h1>
           <p className="text-sm text-muted-foreground">
-            {scan?.projectName} · {results.length} tests
+            {scan?.projectName} · {total} tests
             {scan?.status === "running" && " · updating live"}
           </p>
         </div>
@@ -164,7 +191,7 @@ export default function Results() {
           <Button
             variant="default"
             onClick={() => navigate(`/scans/${scanId}/remediate`)}
-            disabled={scan?.status !== "completed" || results.filter((r) => !r.passed).length === 0}
+            disabled={scan?.status !== "completed" || (summary?.failed ?? 0) === 0}
           >
             <Wrench className="mr-2 h-4 w-4" />
             Remediate
@@ -297,6 +324,16 @@ export default function Results() {
               <div className="rounded-lg border border-dashed p-12 text-center">
                 <Shield className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
                 <p className="text-muted-foreground">No findings match the current filters.</p>
+              </div>
+            )}
+            {results.length < total && (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Showing {results.length} of {total} findings
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setLimit((n) => n + 200)}>
+                  Load more
+                </Button>
               </div>
             )}
           </div>

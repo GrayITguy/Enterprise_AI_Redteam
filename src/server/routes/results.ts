@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../../db/index.js";
 import { scanResults, scans, projects } from "../../db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { callWithSettingsFallback } from "../services/aiProvider.js";
 import { estimateTokens, getContextWindowWithDefault, computeBudget } from "../utils/tokenBudget.js";
@@ -23,47 +23,52 @@ resultsRouter.get("/scans/:scanId/summary", asyncHandler(async (req: Authenticat
 
   if (!scan) return res.status(404).json({ error: "Scan not found" });
 
-  const results = await db
-    .select()
-    .from(scanResults)
-    .where(eq(scanResults.scanId, req.params.scanId))
-    .all();
+  // Aggregate in SQL rather than loading every result row into memory — a large
+  // scan can have tens of thousands of findings. `failed = passed = 0`.
+  const failedExpr = sql<number>`sum(case when ${scanResults.passed} = 0 then 1 else 0 end)`;
+  const scanFilter = eq(scanResults.scanId, req.params.scanId);
 
-  // Single-pass aggregation
-  let passed = 0;
-  let failed = 0;
+  const [totals, sevRows, toolRows, owaspRows] = await Promise.all([
+    db
+      .select({ total: sql<number>`count(*)`, failed: failedExpr })
+      .from(scanResults)
+      .where(scanFilter)
+      .get(),
+    db
+      .select({ severity: scanResults.severity, failed: failedExpr })
+      .from(scanResults)
+      .where(scanFilter)
+      .groupBy(scanResults.severity)
+      .all(),
+    db
+      .select({ tool: scanResults.tool, total: sql<number>`count(*)`, failed: failedExpr })
+      .from(scanResults)
+      .where(scanFilter)
+      .groupBy(scanResults.tool)
+      .all(),
+    db
+      .select({ owasp: scanResults.owaspCategory, total: sql<number>`count(*)`, failed: failedExpr })
+      .from(scanResults)
+      .where(scanFilter)
+      .groupBy(scanResults.owaspCategory)
+      .all(),
+  ]);
+
+  const total = Number(totals?.total ?? 0);
+  const failed = Number(totals?.failed ?? 0);
+
   const bySeverity: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  for (const r of sevRows) bySeverity[r.severity] = Number(r.failed);
+
   const byTool: Record<string, { total: number; failed: number }> = {};
+  for (const r of toolRows) byTool[r.tool] = { total: Number(r.total), failed: Number(r.failed) };
+
   const byOwaspCategory: Record<string, { total: number; failed: number }> = {};
-
-  for (const r of results) {
-    if (r.passed) passed++;
-    else {
-      failed++;
-      bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
-    }
-    if (r.severity === "info" && r.passed) bySeverity.info++;
-
-    if (!byTool[r.tool]) byTool[r.tool] = { total: 0, failed: 0 };
-    byTool[r.tool].total++;
-    if (!r.passed) byTool[r.tool].failed++;
-
-    const cat = r.owaspCategory ?? "Other";
-    if (!byOwaspCategory[cat]) byOwaspCategory[cat] = { total: 0, failed: 0 };
-    byOwaspCategory[cat].total++;
-    if (!r.passed) byOwaspCategory[cat].failed++;
+  for (const r of owaspRows) {
+    byOwaspCategory[r.owasp ?? "Other"] = { total: Number(r.total), failed: Number(r.failed) };
   }
 
-  const summary = {
-    total: results.length,
-    passed,
-    failed,
-    bySeverity,
-    byTool,
-    byOwaspCategory,
-  };
-
-  return res.json(summary);
+  return res.json({ total, passed: total - failed, failed, bySeverity, byTool, byOwaspCategory });
 }));
 
 // ─── POST /api/results/scans/:scanId/narrative ────────────────────────────────

@@ -9,8 +9,13 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 ## [Unreleased]
 
 ### Changed
+- **Scan results are paginated and stats are aggregated in SQL.** `GET /api/scans/:id/results` now takes `limit`/`offset` and returns a `{ results, total, limit, offset }` envelope, and the results-summary endpoint aggregates with `COUNT`/`GROUP BY` instead of loading every finding row into memory — so a scan with tens of thousands of findings no longer risks OOMing the API. The Results page drives its charts from the summary endpoint and pages through findings with a "Load more" button. Also fixed a summary bug where passing `info` findings were miscounted as failures.
+- **Scan progress writes are batched.** The scanner flushes the scan row's running counters every 20 findings (and at each tool boundary) instead of once per finding, cutting write contention on the shared SQLite file.
 - **Ollama browser relay moved to Redis.** The relay queue and pending responses now live in Redis (blocking-list based) instead of in the app process's memory. The scan worker enqueues relay requests directly rather than HTTP-POSTing to its own app with a minted internal token, and poll/fulfill work across app replicas (a browser polling one replica and a producer waiting on another share the same queue). Per-user scoping and cross-user isolation are preserved via a per-request owner key. Removed the now-unused `/api/ollama/relay/forward` endpoint and the internal-token minter.
 - **Prompt, cross-process scan cancellation.** Cancelling a scan now publishes a Redis pub/sub signal that the worker acts on immediately — aborting the in-flight tool and killing its Docker container mid-run — instead of only being noticed between tools by DB-status polling. The signal fans out to every worker replica, so cancellation works when the app and worker (or multiple workers) run as separate processes. Persisted scan status remains the durable source of truth and the polling fallback still guarantees eventual cancellation if a subscriber is momentarily disconnected.
+
+### Security
+- **Report download hardening.** The file-path containment check now uses a separator-terminated match (a sibling like `<dir>-evil` no longer passes), and the download filename is built from the report's own sanitized scan id rather than the raw URL parameter.
 
 ---
 

@@ -263,19 +263,36 @@ scansRouter.get("/:id/results", asyncHandler(async (req: AuthenticatedRequest, r
     return res.status(404).json({ error: "Scan not found" });
   }
 
+  // Pagination — a large Garak run can emit tens of thousands of results, so
+  // cap the page size and let the client page through them.
+  const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+  const totalRow = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(scanResults)
+    .where(eq(scanResults.scanId, req.params.id))
+    .get();
+  const total = Number(totalRow?.count ?? 0);
+
   const results = await db
     .select()
     .from(scanResults)
     .where(eq(scanResults.scanId, req.params.id))
     .orderBy(desc(scanResults.createdAt))
+    .limit(limit)
+    .offset(offset)
     .all();
 
-  return res.json(
-    results.map((r) => ({
+  return res.json({
+    results: results.map((r) => ({
       ...r,
       evidence: safeJsonParse(r.evidence, {}),
-    }))
-  );
+    })),
+    total,
+    limit,
+    offset,
+  });
 }));
 
 // ─── POST /api/scans/:id/cancel ───────────────────────────────────────────────

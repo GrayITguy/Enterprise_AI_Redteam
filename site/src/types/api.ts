@@ -210,6 +210,14 @@ export interface CancelScanResponse {
   message: string;
 }
 
+/** Paginated response from `GET /api/scans/:id/results`. */
+export interface PaginatedScanResults {
+  results: ScanResult[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // ─── Results / narrative ────────────────────────────────────────────────────
 export interface ResultsSummary {
   total: number;
