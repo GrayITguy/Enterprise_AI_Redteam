@@ -85,8 +85,8 @@ setup_env() {
   fi
 
   # Create required directories
-  mkdir -p data/reports keys logs
-  ok "Created required directories (data/, keys/, logs/)"
+  mkdir -p data/reports logs
+  ok "Created required directories (data/, logs/)"
 }
 
 # ─── Build images ────────────────────────────────────────────────────────────

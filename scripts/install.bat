@@ -59,7 +59,6 @@ if not exist ".env" (
 )
 
 if not exist "data\reports" mkdir data\reports
-if not exist "keys" mkdir keys
 if not exist "logs" mkdir logs
 echo [OK] Created required directories.
 

@@ -121,17 +121,6 @@ function applySchemaDirectly(): void {
       updated_by TEXT REFERENCES users(id)
     );
 
-    CREATE TABLE IF NOT EXISTS license_keys (
-      id TEXT PRIMARY KEY,
-      key_hash TEXT NOT NULL UNIQUE,
-      email TEXT,
-      seats INTEGER NOT NULL DEFAULT 1,
-      features TEXT NOT NULL DEFAULT '[]',
-      machine_id TEXT,
-      activated_at INTEGER,
-      expires_at INTEGER
-    );
-
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
     CREATE INDEX IF NOT EXISTS idx_scans_project_id ON scans(project_id);
     CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id);
