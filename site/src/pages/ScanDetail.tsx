@@ -59,7 +59,7 @@ export default function ScanDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
+      <div className="flex h-64 items-center justify-center" role="status" aria-label="Loading scan">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
@@ -102,12 +102,18 @@ export default function ScanDetail() {
         </CardHeader>
         <CardContent className="space-y-4">
           {scan.status !== "pending" && (
-            <div className="space-y-2">
+            <div className="space-y-2" aria-live="polite">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Progress</span>
                 <span>{progress}%</span>
               </div>
-              <Progress value={progress} />
+              <Progress
+                value={progress}
+                aria-label="Scan progress"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              />
             </div>
           )}
 

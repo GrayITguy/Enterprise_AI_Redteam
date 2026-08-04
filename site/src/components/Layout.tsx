@@ -108,6 +108,9 @@ export function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#080808" }}>
+      <a href="#main-content" className="sr-only skip-link">
+        Skip to main content
+      </a>
       {/* ── Cyberpunk Sidebar ─────────────────────────────────────────────── */}
       <aside
         className="flex w-56 shrink-0 flex-col"
@@ -163,7 +166,7 @@ export function Layout() {
         </div>
 
         {/* ── Nav ──────────────────────────────────────────────────── */}
-        <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto">
+        <nav aria-label="Primary" className="flex-1 space-y-0.5 p-2 overflow-y-auto">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const isActive =
               href === "/dashboard"
@@ -284,7 +287,7 @@ export function Layout() {
       </aside>
 
       {/* ── Main content ──────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
+      <main id="main-content" className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
     </div>
