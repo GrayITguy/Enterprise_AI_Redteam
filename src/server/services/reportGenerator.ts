@@ -3,7 +3,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { v4 as uuid } from "uuid";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { scans, scanResults, reports, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../utils/logger.js";
@@ -135,20 +135,20 @@ export class ReportGenerator {
   }
 
   async generatePDF(scanId: string): Promise<string> {
-    const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
+    const scan = await getRow(db.select().from(scans).where(eq(scans.id, scanId)));
     if (!scan) throw new Error("Scan not found");
 
-    const project = await db
+    const project = await getRow(db
       .select()
       .from(projects)
       .where(eq(projects.id, scan.projectId))
-      .get();
+      );
 
-    const results = await db
+    const results = await getRows(db
       .select()
       .from(scanResults)
       .where(eq(scanResults.scanId, scanId))
-      .all();
+      );
 
     const reportId = uuid();
     const filename = `eart-report-${scanId.slice(0, 8)}-${reportId.slice(0, 8)}.pdf`;
@@ -350,14 +350,14 @@ export class ReportGenerator {
   }
 
   async generateJSON(scanId: string): Promise<string> {
-    const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
+    const scan = await getRow(db.select().from(scans).where(eq(scans.id, scanId)));
     if (!scan) throw new Error("Scan not found");
 
-    const results = await db
+    const results = await getRows(db
       .select()
       .from(scanResults)
       .where(eq(scanResults.scanId, scanId))
-      .all();
+      );
 
     const reportId = uuid();
     const filename = `eart-report-${scanId.slice(0, 8)}-${reportId.slice(0, 8)}.json`;
@@ -393,14 +393,14 @@ export class ReportGenerator {
   }
 
   async generateCSV(scanId: string): Promise<string> {
-    const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
+    const scan = await getRow(db.select().from(scans).where(eq(scans.id, scanId)));
     if (!scan) throw new Error("Scan not found");
 
-    const results = await db
+    const results = await getRows(db
       .select()
       .from(scanResults)
       .where(eq(scanResults.scanId, scanId))
-      .all();
+      );
 
     const reportId = uuid();
     const filename = `eart-report-${scanId.slice(0, 8)}-${reportId.slice(0, 8)}.csv`;
@@ -428,15 +428,15 @@ export class ReportGenerator {
   }
 
   async generateHTML(scanId: string): Promise<string> {
-    const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
+    const scan = await getRow(db.select().from(scans).where(eq(scans.id, scanId)));
     if (!scan) throw new Error("Scan not found");
 
-    const project = await db.select().from(projects).where(eq(projects.id, scan.projectId)).get();
-    const results = await db
+    const project = await getRow(db.select().from(projects).where(eq(projects.id, scan.projectId)));
+    const results = await getRows(db
       .select()
       .from(scanResults)
       .where(eq(scanResults.scanId, scanId))
-      .all();
+      );
 
     const reportId = uuid();
     const filename = `eart-report-${scanId.slice(0, 8)}-${reportId.slice(0, 8)}.html`;

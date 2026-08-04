@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { scans, projects, scanResults } from "../../db/schema.js";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -34,7 +34,7 @@ scansRouter.get("/catalog", (_req, res) => {
 // ─── GET /api/scans/stats ─────────────────────────────────────────────────────
 scansRouter.get("/stats", asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Aggregate failed findings by severity across all completed scans for this user
-  const rows = await db
+  const rows = await getRows(db
     .select({
       severity: scanResults.severity,
       count: sql<number>`count(*)`.as("count"),
@@ -45,11 +45,11 @@ scansRouter.get("/stats", asyncHandler(async (req: AuthenticatedRequest, res) =>
       and(
         eq(scans.userId, req.user!.id),
         eq(scans.status, "completed"),
-        sql`${scanResults.passed} = 0`
+        sql`not ${scanResults.passed}`
       )
     )
     .groupBy(scanResults.severity)
-    .all();
+    );
 
   const stats: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const row of rows) {
@@ -61,7 +61,7 @@ scansRouter.get("/stats", asyncHandler(async (req: AuthenticatedRequest, res) =>
 // ─── GET /api/scans/history ───────────────────────────────────────────────────
 // Returns last 30 completed scans for trend charting (oldest first).
 scansRouter.get("/history", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const rows = await db
+  const rows = await getRows(db
     .select({
       id: scans.id,
       projectName: projects.name,
@@ -75,7 +75,7 @@ scansRouter.get("/history", asyncHandler(async (req: AuthenticatedRequest, res) 
     .where(and(eq(scans.userId, req.user!.id), eq(scans.status, "completed")))
     .orderBy(desc(scans.completedAt))
     .limit(30)
-    .all();
+    );
 
   // Return oldest-first so charts render left-to-right
   return res.json(rows.reverse());
@@ -85,7 +85,7 @@ scansRouter.get("/history", asyncHandler(async (req: AuthenticatedRequest, res) 
 // Returns pending scans that are scheduled in the future + recurring scans.
 scansRouter.get("/upcoming", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const now = new Date();
-  const rows = await db
+  const rows = await getRows(db
     .select({
       id: scans.id,
       projectId: scans.projectId,
@@ -107,14 +107,14 @@ scansRouter.get("/upcoming", asyncHandler(async (req: AuthenticatedRequest, res)
     )
     .orderBy(scans.scheduledAt)
     .limit(10)
-    .all();
+    );
 
   return res.json(rows);
 }));
 
 // ─── GET /api/scans ───────────────────────────────────────────────────────────
 scansRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const rows = await db
+  const rows = await getRows(db
     .select({
       id: scans.id,
       projectId: scans.projectId,
@@ -136,7 +136,7 @@ scansRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
     .where(eq(scans.userId, req.user!.id))
     .orderBy(desc(scans.createdAt))
     .limit(100)
-    .all();
+    );
 
   return res.json(
     rows.map((s) => ({
@@ -156,11 +156,11 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { projectId, preset, plugins: customPlugins, scheduledAt, recurrence, notifyOn } = parsed.data;
 
   // Verify project belongs to user
-  const project = await db
+  const project = await getRow(db
     .select({ id: projects.id })
     .from(projects)
     .where(and(eq(projects.id, projectId), eq(projects.userId, req.user!.id)))
-    .get();
+    );
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });
@@ -218,7 +218,7 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
 
 // ─── GET /api/scans/:id ───────────────────────────────────────────────────────
 scansRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({
       id: scans.id,
       projectId: scans.projectId,
@@ -240,7 +240,7 @@ scansRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
     .from(scans)
     .leftJoin(projects, eq(scans.projectId, projects.id))
     .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) {
     return res.status(404).json({ error: "Scan not found" });
@@ -255,11 +255,11 @@ scansRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
 // ─── GET /api/scans/:id/results ───────────────────────────────────────────────
 scansRouter.get("/:id/results", asyncHandler(async (req: AuthenticatedRequest, res) => {
   // Verify ownership
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id })
     .from(scans)
     .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) {
     return res.status(404).json({ error: "Scan not found" });
@@ -270,21 +270,21 @@ scansRouter.get("/:id/results", asyncHandler(async (req: AuthenticatedRequest, r
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
 
-  const totalRow = await db
+  const totalRow = await getRow(db
     .select({ count: sql<number>`count(*)` })
     .from(scanResults)
     .where(eq(scanResults.scanId, req.params.id))
-    .get();
+    );
   const total = Number(totalRow?.count ?? 0);
 
-  const results = await db
+  const results = await getRows(db
     .select()
     .from(scanResults)
     .where(eq(scanResults.scanId, req.params.id))
     .orderBy(desc(scanResults.createdAt))
     .limit(limit)
     .offset(offset)
-    .all();
+    );
 
   return res.json({
     results: results.map((r) => ({
@@ -309,24 +309,24 @@ scansRouter.get("/:id/diff", asyncHandler(async (req: AuthenticatedRequest, res)
 
   // Both scans must belong to the requesting user.
   const [retest, original] = await Promise.all([
-    db.select({ id: scans.id, status: scans.status })
+    getRow(db.select({ id: scans.id, status: scans.status })
       .from(scans)
       .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
-      .get(),
-    db.select({ id: scans.id })
+      ),
+    getRow(db.select({ id: scans.id })
       .from(scans)
       .where(and(eq(scans.id, originalId), eq(scans.userId, req.user!.id)))
-      .get(),
+      ),
   ]);
   if (!retest || !original) return res.status(404).json({ error: "Scan not found" });
 
-  const failedExpr = sql<number>`sum(case when ${scanResults.passed} = 0 then 1 else 0 end)`;
+  const failedExpr = sql<number>`sum(case when not ${scanResults.passed} then 1 else 0 end)`;
   const groupByCategory = (scanId: string) =>
-    db.select({ cat: scanResults.owaspCategory, failed: failedExpr })
+    getRows(db.select({ cat: scanResults.owaspCategory, failed: failedExpr })
       .from(scanResults)
       .where(eq(scanResults.scanId, scanId))
       .groupBy(scanResults.owaspCategory)
-      .all();
+      );
 
   const [origRows, retestRows] = await Promise.all([
     groupByCategory(originalId),
@@ -372,14 +372,14 @@ scansRouter.get("/:id/diff", asyncHandler(async (req: AuthenticatedRequest, res)
 // after a terminal status. The browser reads this with fetch (bearer auth) and
 // falls back to polling if the stream drops.
 scansRouter.get("/:id/events", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({
       id: scans.id, status: scans.status, progress: scans.progress,
       totalTests: scans.totalTests, passedTests: scans.passedTests, failedTests: scans.failedTests,
     })
     .from(scans)
     .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
-    .get();
+    );
   if (!scan) return res.status(404).json({ error: "Scan not found" });
 
   res.set({
@@ -425,11 +425,11 @@ scansRouter.get("/:id/events", asyncHandler(async (req: AuthenticatedRequest, re
 
 // ─── POST /api/scans/:id/cancel ───────────────────────────────────────────────
 scansRouter.post("/:id/cancel", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id, status: scans.status })
     .from(scans)
     .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) {
     return res.status(404).json({ error: "Scan not found" });

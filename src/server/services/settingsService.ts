@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { appSettings } from "../../db/schema.js";
 import { eq, like } from "drizzle-orm";
 
@@ -49,11 +49,11 @@ const SENSITIVE_KEYS = new Set([
 
 /** Get a single setting by key. Returns null if not found. */
 export async function getSetting(key: string): Promise<string | null> {
-  const row = await db
+  const row = await getRow(db
     .select()
     .from(appSettings)
     .where(eq(appSettings.key, key))
-    .get();
+    );
   if (!row) return null;
   if (SENSITIVE_KEYS.has(key)) {
     try {
@@ -69,11 +69,11 @@ export async function getSetting(key: string): Promise<string | null> {
 export async function getSettings(
   prefix: string
 ): Promise<Record<string, string>> {
-  const rows = await db
+  const rows = await getRows(db
     .select()
     .from(appSettings)
     .where(like(appSettings.key, `${prefix}%`))
-    .all();
+    );
   const result: Record<string, string> = {};
   for (const row of rows) {
     if (SENSITIVE_KEYS.has(row.key)) {

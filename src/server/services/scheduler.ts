@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { db } from "../../db/index.js";
+import { db, getRows } from "../../db/index.js";
 import { scans } from "../../db/schema.js";
 import { and, eq, lte, isNotNull } from "drizzle-orm";
 import { scanQueue } from "./queue.js";
@@ -14,7 +14,7 @@ export function startScheduler(): void {
     try {
       const now = new Date();
 
-      const due = await db
+      const due = await getRows(db
         .select({ id: scans.id })
         .from(scans)
         .where(
@@ -24,7 +24,7 @@ export function startScheduler(): void {
             lte(scans.scheduledAt, now)
           )
         )
-        .all();
+        );
 
       if (due.length === 0) return;
 

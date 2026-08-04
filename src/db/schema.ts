@@ -1,137 +1,25 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+/**
+ * Schema barrel.
+ *
+ * Call sites `import { scans } from "../../db/schema.js"` unchanged. At runtime
+ * they receive the ACTIVE dialect's Drizzle table (SQLite by default, Postgres
+ * when DATABASE_URL is a postgres:// URL); at compile time they always see the
+ * SQLite table types, so every existing query and test keeps its exact types.
+ *
+ * The two dialect schemas are faithful mirrors of one another (same table/column
+ * names, enums, nullability, defaults and foreign keys), so casting the active
+ * table to the SQLite type is sound.
+ */
+import * as sqliteSchema from "./schema.sqlite.js";
+import * as pgSchema from "./schema.pg.js";
+import { isPostgres } from "./dialect.js";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Users
-// ─────────────────────────────────────────────────────────────────────────────
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  role: text("role", { enum: ["admin", "analyst", "viewer"] })
-    .default("analyst")
-    .notNull(),
-  inviteCode: text("invite_code"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
-});
+const active = isPostgres ? pgSchema : sqliteSchema;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Invite codes
-// ─────────────────────────────────────────────────────────────────────────────
-export const inviteCodes = sqliteTable("invite_codes", {
-  id: text("id").primaryKey(),
-  code: text("code").notNull().unique(),
-  createdBy: text("created_by")
-    .notNull()
-    .references(() => users.id),
-  usedBy: text("used_by").references(() => users.id),
-  expiresAt: integer("expires_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Projects
-// ─────────────────────────────────────────────────────────────────────────────
-export const projects = sqliteTable("projects", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  name: text("name").notNull(),
-  description: text("description"),
-  targetUrl: text("target_url").notNull(),
-  providerType: text("provider_type", {
-    enum: ["ollama", "openai", "anthropic", "custom"],
-  }).notNull(),
-  /** JSON: { model, apiKey, systemPrompt, headers, ... } */
-  providerConfig: text("provider_config").notNull().default("{}"),
-  isArchived: integer("is_archived", { mode: "boolean" })
-    .default(false)
-    .notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Scans
-// ─────────────────────────────────────────────────────────────────────────────
-export const scans = sqliteTable("scans", {
-  id: text("id").primaryKey(),
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  status: text("status", {
-    enum: ["pending", "running", "completed", "failed", "cancelled"],
-  })
-    .default("pending")
-    .notNull(),
-  /** "quick" | "owasp" | "full" | null (custom) */
-  preset: text("preset"),
-  /** JSON array of plugin IDs */
-  plugins: text("plugins").notNull().default("[]"),
-  totalTests: integer("total_tests").default(0).notNull(),
-  passedTests: integer("passed_tests").default(0).notNull(),
-  failedTests: integer("failed_tests").default(0).notNull(),
-  errorMessage: text("error_message"),
-  scheduledAt: integer("scheduled_at", { mode: "timestamp" }),
-  /** null = run-once; "daily" | "weekly" | "monthly" = recurring */
-  recurrence: text("recurrence"),
-  /** "always" = every completion; "failure" = only when failedTests > 0; null = no email */
-  notifyOn: text("notify_on"),
-  /** 0-100 progress percentage, updated in real-time during scan execution */
-  progress: integer("progress").default(0).notNull(),
-  startedAt: integer("started_at", { mode: "timestamp" }),
-  completedAt: integer("completed_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Scan Results (individual test findings)
-// ─────────────────────────────────────────────────────────────────────────────
-export const scanResults = sqliteTable("scan_results", {
-  id: text("id").primaryKey(),
-  scanId: text("scan_id")
-    .notNull()
-    .references(() => scans.id),
-  tool: text("tool", { enum: ["promptfoo", "garak", "pyrit", "deepteam"] }).notNull(),
-  category: text("category").notNull(),
-  severity: text("severity", {
-    enum: ["critical", "high", "medium", "low", "info"],
-  }).notNull(),
-  testName: text("test_name").notNull(),
-  /** "LLM01" through "LLM10" or null */
-  owaspCategory: text("owasp_category"),
-  prompt: text("prompt"),
-  response: text("response"),
-  passed: integer("passed", { mode: "boolean" }).notNull(),
-  /** JSON object with tool-specific evidence */
-  evidence: text("evidence").notNull().default("{}"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reports (generated PDF/JSON files)
-// ─────────────────────────────────────────────────────────────────────────────
-export const reports = sqliteTable("reports", {
-  id: text("id").primaryKey(),
-  scanId: text("scan_id")
-    .notNull()
-    .references(() => scans.id),
-  format: text("format", { enum: ["pdf", "json", "html", "csv"] }).notNull(),
-  filePath: text("file_path").notNull(),
-  sizeBytes: integer("size_bytes").default(0).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// App Settings (key-value platform configuration)
-// ─────────────────────────────────────────────────────────────────────────────
-export const appSettings = sqliteTable("app_settings", {
-  key: text("key").primaryKey(),
-  value: text("value").notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-  updatedBy: text("updated_by").references(() => users.id),
-});
+export const users = active.users as unknown as typeof sqliteSchema.users;
+export const inviteCodes = active.inviteCodes as unknown as typeof sqliteSchema.inviteCodes;
+export const projects = active.projects as unknown as typeof sqliteSchema.projects;
+export const scans = active.scans as unknown as typeof sqliteSchema.scans;
+export const scanResults = active.scanResults as unknown as typeof sqliteSchema.scanResults;
+export const reports = active.reports as unknown as typeof sqliteSchema.reports;
+export const appSettings = active.appSettings as unknown as typeof sqliteSchema.appSettings;

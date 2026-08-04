@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { reports, scans } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -18,19 +18,19 @@ const generator = new ReportGenerator();
 
 // ─── GET /api/reports/:scanId ─────────────────────────────────────────────────
 reportsRouter.get("/:scanId", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id })
     .from(scans)
     .where(and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) return res.status(404).json({ error: "Scan not found" });
 
-  const existing = await db
+  const existing = await getRows(db
     .select()
     .from(reports)
     .where(eq(reports.scanId, req.params.scanId))
-    .all();
+    );
 
   return res.json(existing);
 }));
@@ -45,11 +45,11 @@ reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRe
     return res.status(400).json({ error: "Validation failed" });
   }
 
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id, status: scans.status })
     .from(scans)
     .where(and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) return res.status(404).json({ error: "Scan not found" });
 
@@ -81,7 +81,7 @@ reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRe
 reportsRouter.get(
   "/:scanId/download/:reportId",
   asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const report = await db
+    const report = await getRow(db
       .select({
         id: reports.id,
         scanId: reports.scanId,
@@ -90,16 +90,16 @@ reportsRouter.get(
       })
       .from(reports)
       .where(eq(reports.id, req.params.reportId))
-      .get();
+      );
 
     if (!report) return res.status(404).json({ error: "Report not found" });
 
     // Verify the parent scan belongs to the requesting user
-    const scan = await db
+    const scan = await getRow(db
       .select({ id: scans.id })
       .from(scans)
       .where(and(eq(scans.id, report.scanId), eq(scans.userId, req.user!.id)))
-      .get();
+      );
 
     if (!scan) return res.status(404).json({ error: "Report not found" });
 

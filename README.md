@@ -181,7 +181,7 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `JWT_SECRET` | *(required)* | Secret for JWT signing — `openssl rand -hex 64` |
-| `DATABASE_URL` | `./data/eart.db` | SQLite path or Postgres URL |
+| `DATABASE_URL` | `./data/eart.db` | A `postgres://` / `postgresql://` URL selects PostgreSQL; any other value is a SQLite file path (`:memory:` supported). Tables are created automatically on first boot. |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `REPORT_DIR` | `./data/reports` | PDF/JSON report storage |
 | `ANTHROPIC_API_KEY` | — | Cloud fallback for AI features (not required with Ollama or Settings-configured provider) |

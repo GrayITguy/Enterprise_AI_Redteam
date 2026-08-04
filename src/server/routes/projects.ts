@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { v4 as uuid } from "uuid";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -29,7 +29,7 @@ const UpdateProjectSchema = CreateProjectSchema.partial();
 
 // ─── GET /api/projects ────────────────────────────────────────────────────────
 projectsRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const rows = await db
+  const rows = await getRows(db
     .select()
     .from(projects)
     .where(
@@ -39,7 +39,7 @@ projectsRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
       )
     )
     .orderBy(desc(projects.createdAt))
-    .all();
+    );
 
   return res.json(
     rows.map((p) => ({
@@ -80,26 +80,26 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
 
 // ─── GET /api/projects/:id ────────────────────────────────────────────────────
 projectsRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const project = await db
+  const project = await getRow(db
     .select()
     .from(projects)
     .where(
       and(eq(projects.id, req.params.id), eq(projects.userId, req.user!.id))
     )
-    .get();
+    );
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });
   }
 
   // Include recent scan count
-  const scanRows = await db
+  const scanRows = await getRows(db
     .select({ id: scans.id, status: scans.status, createdAt: scans.createdAt })
     .from(scans)
     .where(eq(scans.projectId, project.id))
     .orderBy(desc(scans.createdAt))
     .limit(5)
-    .all();
+    );
 
   return res.json({
     ...project,
@@ -110,13 +110,13 @@ projectsRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =
 
 // ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
 projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const project = await db
+  const project = await getRow(db
     .select()
     .from(projects)
     .where(
       and(eq(projects.id, req.params.id), eq(projects.userId, req.user!.id))
     )
-    .get();
+    );
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });
@@ -145,11 +145,11 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
 
   await db.update(projects).set(updates).where(eq(projects.id, req.params.id));
 
-  const updated = await db
+  const updated = await getRow(db
     .select()
     .from(projects)
     .where(eq(projects.id, req.params.id))
-    .get();
+    );
 
   return res.json({
     ...updated,
@@ -160,13 +160,13 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
 // ─── DELETE /api/projects/:id ─────────────────────────────────────────────────
 // Soft delete — sets isArchived = true to preserve scan history
 projectsRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const project = await db
+  const project = await getRow(db
     .select({ id: projects.id })
     .from(projects)
     .where(
       and(eq(projects.id, req.params.id), eq(projects.userId, req.user!.id))
     )
-    .get();
+    );
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });

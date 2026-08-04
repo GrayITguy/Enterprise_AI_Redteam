@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { v4 as uuid } from "uuid";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { users, inviteCodes } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { generateToken, requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -26,7 +26,7 @@ const LoginSchema = z.object({
 // First-run: create the first admin account. Only works when users table is empty.
 authRouter.post("/setup", async (req, res) => {
   try {
-    const existingUsers = await db.select({ id: users.id }).from(users).limit(1).all();
+    const existingUsers = await getRows(db.select({ id: users.id }).from(users).limit(1));
     if (existingUsers.length > 0) {
       return res.status(409).json({ error: "Setup already completed. Use /login instead." });
     }
@@ -78,7 +78,7 @@ authRouter.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Invite code required for registration" });
     }
 
-    const invite = await db
+    const invite = await getRow(db
       .select()
       .from(inviteCodes)
       .where(
@@ -87,7 +87,7 @@ authRouter.post("/register", async (req, res) => {
           isNull(inviteCodes.usedBy)
         )
       )
-      .get();
+      );
 
     if (!invite) {
       return res.status(400).json({ error: "Invalid or already used invite code" });
@@ -98,11 +98,11 @@ authRouter.post("/register", async (req, res) => {
     }
 
     // Check email uniqueness
-    const existing = await db
+    const existing = await getRow(db
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, email))
-      .get();
+      );
 
     if (existing) {
       return res.status(409).json({ error: "Email already registered" });
@@ -148,11 +148,11 @@ authRouter.post("/login", async (req, res) => {
     }
 
     const { email, password } = parsed.data;
-    const user = await db
+    const user = await getRow(db
       .select()
       .from(users)
       .where(eq(users.email, email))
-      .get();
+      );
 
     if (!user) {
       return res.status(401).json({ error: "Invalid email or password" });

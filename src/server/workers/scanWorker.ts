@@ -3,7 +3,7 @@ import { v4 as uuid } from "uuid";
 import { redisConnection, scanQueue, type ScanJobData } from "../services/queue.js";
 import { ScanOrchestrator } from "../services/scanner.js";
 import { logger } from "../utils/logger.js";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { scans, projects, users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { sendScanCompleteEmail } from "../services/emailService.js";
@@ -24,11 +24,11 @@ subscribeCancel((scanId) => orchestrator.cancel(scanId));
  */
 async function recoverStaleScans(): Promise<void> {
   try {
-    const running = await db
+    const running = await getRows(db
       .select({ id: scans.id })
       .from(scans)
       .where(eq(scans.status, "running"))
-      .all();
+      );
 
     // The per-scan job lookups are independent Redis round-trips — run them
     // concurrently rather than serially.
@@ -77,7 +77,7 @@ worker.on("completed", async (job) => {
   try {
     const { scanId } = job.data;
 
-    const row = await db
+    const row = await getRow(db
       .select({
         id: scans.id,
         projectId: scans.projectId,
@@ -95,7 +95,7 @@ worker.on("completed", async (job) => {
       .from(scans)
       .leftJoin(projects, eq(scans.projectId, projects.id))
       .where(eq(scans.id, scanId))
-      .get();
+      );
 
     if (!row) return;
 
@@ -107,11 +107,11 @@ worker.on("completed", async (job) => {
       (row.notifyOn === "failure" && row.failedTests > 0);
 
     if (shouldEmail) {
-      const user = await db
+      const user = await getRow(db
         .select({ email: users.email })
         .from(users)
         .where(eq(users.id, row.userId))
-        .get();
+        );
 
       if (user?.email) {
         await sendScanCompleteEmail({

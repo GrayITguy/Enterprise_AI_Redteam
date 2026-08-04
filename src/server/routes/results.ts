@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { scanResults, scans, projects } from "../../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -15,43 +15,45 @@ resultsRouter.use(requireAuth);
 
 // ─── GET /api/results/scans/:scanId/summary ───────────────────────────────────
 resultsRouter.get("/scans/:scanId/summary", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id })
     .from(scans)
     .where(and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) return res.status(404).json({ error: "Scan not found" });
 
   // Aggregate in SQL rather than loading every result row into memory — a large
   // scan can have tens of thousands of findings. `failed = passed = 0`.
-  const failedExpr = sql<number>`sum(case when ${scanResults.passed} = 0 then 1 else 0 end)`;
+  // `NOT passed` is dialect-neutral: on SQLite `passed` is 0/1, on Postgres it is
+  // a real boolean — both evaluate correctly, unlike a literal `= 0` comparison.
+  const failedExpr = sql<number>`sum(case when not ${scanResults.passed} then 1 else 0 end)`;
   const scanFilter = eq(scanResults.scanId, req.params.scanId);
 
   const [totals, sevRows, toolRows, owaspRows] = await Promise.all([
-    db
+    getRow(db
       .select({ total: sql<number>`count(*)`, failed: failedExpr })
       .from(scanResults)
       .where(scanFilter)
-      .get(),
-    db
+      ),
+    getRows(db
       .select({ severity: scanResults.severity, failed: failedExpr })
       .from(scanResults)
       .where(scanFilter)
       .groupBy(scanResults.severity)
-      .all(),
-    db
+      ),
+    getRows(db
       .select({ tool: scanResults.tool, total: sql<number>`count(*)`, failed: failedExpr })
       .from(scanResults)
       .where(scanFilter)
       .groupBy(scanResults.tool)
-      .all(),
-    db
+      ),
+    getRows(db
       .select({ owasp: scanResults.owaspCategory, total: sql<number>`count(*)`, failed: failedExpr })
       .from(scanResults)
       .where(scanFilter)
       .groupBy(scanResults.owaspCategory)
-      .all(),
+      ),
   ]);
 
   const total = Number(totals?.total ?? 0);
@@ -75,11 +77,11 @@ resultsRouter.get("/scans/:scanId/summary", asyncHandler(async (req: Authenticat
 // Uses the project's own LLM provider (including local Ollama) so this works
 // fully offline in air-gapped deployments.
 resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const scan = await db
+  const scan = await getRow(db
     .select({ id: scans.id, status: scans.status, projectId: scans.projectId })
     .from(scans)
     .where(and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id)))
-    .get();
+    );
 
   if (!scan) return res.status(404).json({ error: "Scan not found" });
   if (scan.status !== "completed") {
@@ -87,7 +89,7 @@ resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: Authenti
   }
 
   // Fetch the project to get its LLM provider configuration
-  const project = await db
+  const project = await getRow(db
     .select({
       targetUrl: projects.targetUrl,
       providerType: projects.providerType,
@@ -95,7 +97,7 @@ resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: Authenti
     })
     .from(projects)
     .where(eq(projects.id, scan.projectId))
-    .get();
+    );
 
   const providerConfig = project ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {}) : {};
 
@@ -104,11 +106,11 @@ resultsRouter.post("/scans/:scanId/narrative", asyncHandler(async (req: Authenti
   const providerType = project?.providerType ?? "ollama";
   const contextWindow = getContextWindowWithDefault(model, providerType);
 
-  const results = await db
+  const results = await getRows(db
     .select()
     .from(scanResults)
     .where(eq(scanResults.scanId, req.params.scanId))
-    .all();
+    );
 
   const total = results.length;
   let failedCount = 0;

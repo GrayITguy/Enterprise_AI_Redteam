@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { sql, eq, inArray } from "drizzle-orm";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows, isPostgres } from "../../db/index.js";
 import { users, projects, scans, scanResults, reports, inviteCodes } from "../../db/schema.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/helpers.js";
@@ -24,17 +24,17 @@ const publicColumns = {
 const RoleSchema = z.object({ role: z.enum(["admin", "analyst", "viewer"]) });
 
 async function countAdmins(): Promise<number> {
-  const row = await db
+  const row = await getRow(db
     .select({ c: sql<number>`count(*)` })
     .from(users)
     .where(eq(users.role, "admin"))
-    .get();
+    );
   return Number(row?.c ?? 0);
 }
 
 // ─── GET /api/users ───────────────────────────────────────────────────────────
 usersRouter.get("/", asyncHandler(async (_req, res) => {
-  const list = await db.select(publicColumns).from(users).orderBy(users.createdAt).all();
+  const list = await getRows(db.select(publicColumns).from(users).orderBy(users.createdAt));
   res.json(list);
 }));
 
@@ -45,11 +45,11 @@ usersRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =>
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   }
 
-  const target = await db
+  const target = await getRow(db
     .select({ id: users.id, role: users.role })
     .from(users)
     .where(eq(users.id, req.params.id))
-    .get();
+    );
   if (!target) return res.status(404).json({ error: "User not found" });
 
   // Never leave the platform with zero admins.
@@ -58,7 +58,7 @@ usersRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =>
   }
 
   await db.update(users).set({ role: parsed.data.role }).where(eq(users.id, target.id));
-  const updated = await db.select(publicColumns).from(users).where(eq(users.id, target.id)).get();
+  const updated = await getRow(db.select(publicColumns).from(users).where(eq(users.id, target.id)));
   return res.json(updated);
 }));
 
@@ -70,36 +70,55 @@ usersRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =
     return res.status(400).json({ error: "You cannot delete your own account" });
   }
 
-  const target = await db
+  const target = await getRow(db
     .select({ id: users.id, role: users.role })
     .from(users)
     .where(eq(users.id, req.params.id))
-    .get();
+    );
   if (!target) return res.status(404).json({ error: "User not found" });
 
   if (target.role === "admin" && (await countAdmins()) <= 1) {
     return res.status(409).json({ error: "Cannot delete the last remaining admin" });
   }
 
-  const userScans = await db
+  const userScans = await getRows(db
     .select({ id: scans.id })
     .from(scans)
     .where(eq(scans.userId, target.id))
-    .all();
+    );
   const scanIds = userScans.map((s) => s.id);
 
-  db.transaction((tx) => {
-    if (scanIds.length > 0) {
-      tx.delete(reports).where(inArray(reports.scanId, scanIds)).run();
-      tx.delete(scanResults).where(inArray(scanResults.scanId, scanIds)).run();
-    }
-    tx.delete(scans).where(eq(scans.userId, target.id)).run();
-    tx.delete(projects).where(eq(projects.userId, target.id)).run();
-    // invite_codes.created_by is NOT NULL → delete; used_by is nullable → detach.
-    tx.delete(inviteCodes).where(eq(inviteCodes.createdBy, target.id)).run();
-    tx.update(inviteCodes).set({ usedBy: null }).where(eq(inviteCodes.usedBy, target.id)).run();
-    tx.delete(users).where(eq(users.id, target.id)).run();
-  });
+  // SQLite (better-sqlite3) transactions are synchronous and use `.run()`;
+  // Postgres (postgres-js) transactions are async and await each statement.
+  // Same statements, one branch per dialect.
+  if (isPostgres) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (db as any).transaction(async (tx: any) => {
+      if (scanIds.length > 0) {
+        await tx.delete(reports).where(inArray(reports.scanId, scanIds));
+        await tx.delete(scanResults).where(inArray(scanResults.scanId, scanIds));
+      }
+      await tx.delete(scans).where(eq(scans.userId, target.id));
+      await tx.delete(projects).where(eq(projects.userId, target.id));
+      // invite_codes.created_by is NOT NULL → delete; used_by is nullable → detach.
+      await tx.delete(inviteCodes).where(eq(inviteCodes.createdBy, target.id));
+      await tx.update(inviteCodes).set({ usedBy: null }).where(eq(inviteCodes.usedBy, target.id));
+      await tx.delete(users).where(eq(users.id, target.id));
+    });
+  } else {
+    db.transaction((tx) => {
+      if (scanIds.length > 0) {
+        tx.delete(reports).where(inArray(reports.scanId, scanIds)).run();
+        tx.delete(scanResults).where(inArray(scanResults.scanId, scanIds)).run();
+      }
+      tx.delete(scans).where(eq(scans.userId, target.id)).run();
+      tx.delete(projects).where(eq(projects.userId, target.id)).run();
+      // invite_codes.created_by is NOT NULL → delete; used_by is nullable → detach.
+      tx.delete(inviteCodes).where(eq(inviteCodes.createdBy, target.id)).run();
+      tx.update(inviteCodes).set({ usedBy: null }).where(eq(inviteCodes.usedBy, target.id)).run();
+      tx.delete(users).where(eq(users.id, target.id)).run();
+    });
+  }
 
   logger.info(`[Users] User ${target.id} deleted by admin ${req.user!.id} (${scanIds.length} scans removed)`);
   return res.status(204).send();
