@@ -54,6 +54,15 @@ export interface InviteResponse {
   expiresAt: string | null;
 }
 
+/** A user row as returned by the admin `GET /api/users` endpoint (no secrets). */
+export interface ManagedUser {
+  id: string;
+  email: string;
+  role: Role;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 export interface RedactedProviderConfig {
   hasApiKey: boolean;

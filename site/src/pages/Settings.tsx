@@ -5,6 +5,8 @@ import type {
   RemediationSettings,
   ModelsResponse,
   InviteResponse,
+  ManagedUser,
+  Role,
 } from "@/types/api";
 import { apiErrorMessage } from "@/types/api";
 import { useAuthStore } from "@/store/authStore";
@@ -24,8 +26,9 @@ import {
 } from "@/components/ui/select";
 import {
   Users, Copy, CheckCircle, Plus, Mail, Send, Sparkles,
-  Save, AlertCircle, Info, RefreshCw, Wifi, WifiOff,
+  Save, AlertCircle, Info, RefreshCw, Wifi, WifiOff, Trash2,
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { useState, useRef, useCallback, useEffect } from "react";
 
 export default function Settings() {
@@ -128,6 +131,9 @@ export default function Settings() {
           </CardContent>
         </Card>
       )}
+
+      {/* User management (admin only) */}
+      {user?.role === "admin" && <UserManagement />}
 
       {/* SMTP Settings (admin only) */}
       {user?.role === "admin" && <SmtpSettings />}
@@ -696,6 +702,113 @@ function RemediationSettings() {
           <p className="text-sm text-destructive">
             Connection failed: {apiErrorMessage(testMutation.error) ?? "Unknown error"}
           </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── User Management Card (admin only) ──────────────────────────────────────
+
+function UserManagement() {
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => api.get("/users").then((r) => r.data as ManagedUser[]),
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: Role }) =>
+      api.patch(`/users/${id}`, { role }),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err) => setError(apiErrorMessage(err) ?? "Failed to update role"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/users/${id}`),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err) => setError(apiErrorMessage(err) ?? "Failed to delete user"),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="h-4 w-4" />
+          Users
+        </CardTitle>
+        <CardDescription>Manage team members' roles and access.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading users…</p>
+        ) : (
+          <div className="divide-y rounded-md border">
+            {users.map((u) => {
+              const isSelf = u.id === user?.id;
+              return (
+                <div key={u.id} className="flex items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {u.email}
+                      {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {u.lastLoginAt
+                        ? `Last active ${formatDistanceToNow(new Date(u.lastLoginAt), { addSuffix: true })}`
+                        : "Never signed in"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Select
+                      value={u.role}
+                      onValueChange={(role) => roleMutation.mutate({ id: u.id, role: role as Role })}
+                      disabled={roleMutation.isPending}
+                    >
+                      <SelectTrigger className="h-8 w-28 text-xs capitalize">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Admin</SelectItem>
+                        <SelectItem value="analyst">Analyst</SelectItem>
+                        <SelectItem value="viewer">Viewer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={isSelf || deleteMutation.isPending}
+                      title={isSelf ? "You cannot delete your own account" : "Delete user"}
+                      onClick={() => {
+                        if (confirm(`Delete ${u.email}? This removes their projects, scans and reports.`)) {
+                          deleteMutation.mutate(u.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </CardContent>
     </Card>

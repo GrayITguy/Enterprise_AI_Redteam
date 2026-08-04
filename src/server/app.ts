@@ -4,6 +4,7 @@ import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
 import { authRouter } from "./routes/auth.js";
+import { usersRouter } from "./routes/users.js";
 import { projectsRouter } from "./routes/projects.js";
 import { scansRouter } from "./routes/scans.js";
 import { resultsRouter } from "./routes/results.js";
@@ -83,6 +84,7 @@ app.get("/api/health", (_req, res) => {
 
 // ─── API routes ───────────────────────────────────────────────────────────────
 app.use("/api/auth", authRouter);
+app.use("/api/users", usersRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/scans", scansRouter);
 app.use("/api/results", resultsRouter);
