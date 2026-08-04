@@ -6,6 +6,26 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [2.2.0] — 2026-08-04
+
+### Fixed
+- **Garak / PyRIT / DeepTeam findings were silently discarded** — the Python workers emit snake_case JSON (`test_name`, `owasp_category`) but the backend read camelCase, so every insert into the `NOT NULL` `test_name` column threw and was swallowed. Scans reported only Promptfoo results while claiming all four tools ran. `dockerRunner` now normalizes worker output, awaits result persistence before resolving, surfaces worker error lines instead of parsing them as findings, and no longer reports a crashed worker as a clean scan.
+- **OWASP categories were almost never recorded** — the scanner re-derived severity/OWASP from an 8-entry substring map covering 8 of 60 plugins, so most findings stored `owaspCategory: null` and reports showed "Not Tested". Severity and OWASP now come from the authoritative plugin catalog.
+- **Scan cancellation was cosmetic** — cancelling flipped the DB status but the running scan finished anyway and overwrote it back to `completed`, leaving orphaned Docker containers. Cancellation is now honoured across process boundaries: in-flight tools stop, worker containers are killed by name, partial results are kept, and the status stays `cancelled`.
+- **BullMQ retries duplicated results and corrupted counts** — a retried scan left the previous attempt's rows in the database. Each (re)start now clears prior results and resets counters so a retry is idempotent.
+- **Scans could hang in `running` forever** after a worker crash — the worker now recovers orphaned `running` scans (with no live job) to `failed` on startup, and aborts in-flight scans on shutdown so their containers are killed rather than orphaned.
+
+### Security
+- **SSRF hardening** — the AI-remediation/narrative and direct-endpoint scan paths fetched user-supplied URLs with no guard, allowing requests to cloud-metadata endpoints (e.g. `169.254.169.254`). A denylist guard now blocks cloud-metadata and link-local targets on those paths (loopback and LAN hosts remain reachable for local models).
+- **Ollama browser relay is now scoped per user** — poll/fulfill were global, letting any authenticated user pull another user's queued scan prompts off the queue or inject fabricated LLM responses into their results. Relay items are now bound to the owning user, and the scan worker authenticates its forward calls as the scan owner via a short-lived internal token.
+- **Project provider API keys are no longer returned to clients** — the projects API echoed the stored `apiKey` in plaintext. It is now redacted to a `hasApiKey` flag (matching the SMTP-password pattern) and preserved across partial updates so it is never wiped by a save that omits it.
+- Docker worker containers now run with `--pids-limit` in addition to the existing memory/CPU/`no-new-privileges` constraints.
+
+### Added
+- Tests for worker-result normalization, the SSRF denylist guard, provider-config redaction/secret-preservation, and per-user relay isolation (backend suite: 61 → 81).
+
+---
+
 ## [2.1.0] — 2026-08-04
 
 ### Changed

@@ -86,6 +86,30 @@ describe("Projects API", () => {
         .send({ ...PROJECT_PAYLOAD, providerType: "unknown-provider" });
       expect(res.status).toBe(400);
     });
+
+    it("never returns a stored provider apiKey to the client", async () => {
+      const created = await request(app)
+        .post("/api/projects")
+        .set(authHeader(admin.token))
+        .send({
+          ...PROJECT_PAYLOAD,
+          providerType: "openai",
+          providerConfig: { model: "gpt-4o-mini", apiKey: "sk-super-secret" },
+        });
+      expect(created.status).toBe(201);
+      expect(created.body.providerConfig).not.toHaveProperty("apiKey");
+      expect(created.body.providerConfig.hasApiKey).toBe(true);
+
+      // Neither list nor detail views should leak it.
+      const list = await request(app).get("/api/projects").set(authHeader(admin.token));
+      expect(JSON.stringify(list.body)).not.toContain("sk-super-secret");
+
+      const detail = await request(app)
+        .get(`/api/projects/${created.body.id}`)
+        .set(authHeader(admin.token));
+      expect(JSON.stringify(detail.body)).not.toContain("sk-super-secret");
+      expect(detail.body.providerConfig.hasApiKey).toBe(true);
+    });
   });
 
   describe("GET /api/projects/:id", () => {
@@ -126,6 +150,27 @@ describe("Projects API", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("Renamed Project");
+    });
+
+    it("preserves the stored apiKey when a partial update omits it", async () => {
+      const created = await request(app)
+        .post("/api/projects")
+        .set(authHeader(admin.token))
+        .send({
+          ...PROJECT_PAYLOAD,
+          providerType: "openai",
+          providerConfig: { model: "gpt-4o-mini", apiKey: "sk-keep-me" },
+        });
+
+      // Update only the model — the client never re-sends (or even sees) the key.
+      const res = await request(app)
+        .patch(`/api/projects/${created.body.id}`)
+        .set(authHeader(admin.token))
+        .send({ providerConfig: { model: "gpt-4o" } });
+      expect(res.status).toBe(200);
+      expect(res.body.providerConfig.hasApiKey).toBe(true);
+      expect(res.body.providerConfig.model).toBe("gpt-4o");
+      expect(JSON.stringify(res.body)).not.toContain("sk-keep-me");
     });
   });
 

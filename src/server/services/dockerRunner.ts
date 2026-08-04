@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { v4 as uuid } from "uuid";
 import { logger } from "../utils/logger.js";
 import { isLocalhostUrl } from "../utils/helpers.js";
 
@@ -6,9 +7,9 @@ export interface DockerScanResult {
   testName: string;
   category: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
-  owaspCategory?: string;
-  prompt?: string;
-  response?: string;
+  owaspCategory?: string | null;
+  prompt?: string | null;
+  response?: string | null;
   passed: boolean;
   evidence: Record<string, unknown>;
 }
@@ -46,6 +47,43 @@ function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
   };
 }
 
+/**
+ * Normalize a raw JSON line emitted by a Python worker into a DockerScanResult.
+ *
+ * Workers emit snake_case keys (`test_name`, `owasp_category`, …) but the rest
+ * of the backend consumes camelCase.  Without this mapping the camelCase fields
+ * are `undefined` at runtime, and since `scan_results.test_name` is NOT NULL
+ * every Garak/PyRIT/DeepTeam insert throws and the findings are silently lost.
+ *
+ * Returns `null` for protocol/error lines (e.g. `{"error": "..."}`) that are not
+ * scan results — the caller logs and skips those.
+ */
+export function normalizeWorkerResult(raw: Record<string, unknown>): DockerScanResult | null {
+  // Config-parse failures and startup banners are emitted as bare {"error": ...}
+  // or {"startup": ...} objects — they carry no test_name and are not findings.
+  const testName = (raw.testName ?? raw.test_name) as string | undefined;
+  if (!testName) return null;
+
+  const severityRaw = (raw.severity as string | undefined) ?? "medium";
+  const allowed = ["critical", "high", "medium", "low", "info"] as const;
+  const severity = (allowed as readonly string[]).includes(severityRaw)
+    ? (severityRaw as DockerScanResult["severity"])
+    : "medium";
+
+  const evidence = raw.evidence;
+  return {
+    testName,
+    category: (raw.category as string | undefined) ?? "unknown",
+    severity,
+    owaspCategory: (raw.owaspCategory ?? raw.owasp_category ?? null) as string | null,
+    prompt: (raw.prompt ?? null) as string | null,
+    response: (raw.response ?? null) as string | null,
+    passed: raw.passed === true,
+    evidence:
+      evidence && typeof evidence === "object" ? (evidence as Record<string, unknown>) : {},
+  };
+}
+
 export class DockerRunner {
   private getImage(tool: string): string {
     const images: Record<string, string> = {
@@ -59,7 +97,8 @@ export class DockerRunner {
   async run(
     tool: string,
     config: DockerRunConfig,
-    onResult?: (result: DockerScanResult) => Promise<void>
+    onResult?: (result: DockerScanResult) => Promise<void>,
+    signal?: AbortSignal
   ): Promise<DockerScanResult[]> {
     const image = this.getImage(tool);
     // Convert to snake_case for Python workers and apply gateway URL rewriting
@@ -67,15 +106,27 @@ export class DockerRunner {
     const configJson = JSON.stringify(snakeConfig);
     const results: DockerScanResult[] = [];
 
-    logger.info(`[DockerRunner] Starting ${tool} worker (image: ${image})`);
+    // A stable container name so the container itself (not just the docker CLI
+    // process) can be killed on timeout or cancellation.
+    const containerName = `eart-wkr-${tool}-${uuid().slice(0, 8)}`;
+
+    logger.info(`[DockerRunner] Starting ${tool} worker (image: ${image}, container: ${containerName})`);
+
+    if (signal?.aborted) {
+      logger.info(`[DockerRunner] ${tool} worker aborted before start`);
+      return results;
+    }
 
     return new Promise((resolve, reject) => {
       const args = [
         "run",
         "--rm",
         "-i",
+        "--name",
+        containerName,
         "--memory=2g",
         "--cpus=1",
+        "--pids-limit=512",
         "--security-opt=no-new-privileges",
         // Use --add-host instead of --network=host for cross-platform support.
         // --network=host only works on Linux; --add-host works on Linux,
@@ -88,34 +139,65 @@ export class DockerRunner {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
-      // Send config as JSON on stdin
+      // Kill the running container (not just the docker CLI process) so the
+      // Python worker actually stops hammering the target.
+      const killContainer = (reason: string): void => {
+        logger.warn(`[DockerRunner] Killing ${tool} container ${containerName}: ${reason}`);
+        try {
+          spawn("docker", ["kill", containerName], { stdio: "ignore" }).on("error", () => {
+            /* docker missing — child.error will fire separately */
+          });
+        } catch {
+          /* ignore */
+        }
+      };
+
+      // Serialize onResult calls into a single chain so DB writes don't race and
+      // so any rejection is surfaced (previously results were fire-and-forget).
+      let persistChain: Promise<void> = Promise.resolve();
+      const handleRaw = (rawLine: string): void => {
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(rawLine) as Record<string, unknown>;
+        } catch {
+          logger.warn(`[DockerRunner] Failed to parse JSONL line: ${rawLine.slice(0, 100)}`);
+          return;
+        }
+        const normalized = normalizeWorkerResult(parsed);
+        if (!normalized) {
+          // Protocol line (error / startup banner) — surface it, don't persist.
+          if (parsed.error) {
+            logger.error(`[DockerRunner] ${tool} worker error line: ${String(parsed.error).slice(0, 300)}`);
+          }
+          return;
+        }
+        results.push(normalized);
+        if (onResult) {
+          persistChain = persistChain.then(() =>
+            onResult(normalized).catch((err) => {
+              logger.error(`[DockerRunner] onResult callback error: ${err.message}`);
+            })
+          );
+        }
+      };
+
+      // Send config as JSON on stdin. Guard against EPIPE when docker is missing.
+      child.stdin.on("error", (err) => {
+        logger.warn(`[DockerRunner] stdin error for ${tool}: ${err.message}`);
+      });
       child.stdin.write(configJson + "\n");
       child.stdin.end();
 
       let buffer = "";
       let stderrOutput = "";
 
-      // Parse JSONL from stdout
       child.stdout.on("data", (chunk: Buffer) => {
         buffer += chunk.toString();
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? ""; // keep incomplete line in buffer
-
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed) continue;
-
-          try {
-            const result = JSON.parse(trimmed) as DockerScanResult;
-            results.push(result);
-            if (onResult) {
-              onResult(result).catch((err) =>
-                logger.error(`[DockerRunner] onResult callback error: ${err.message}`)
-              );
-            }
-          } catch (parseErr) {
-            logger.warn(`[DockerRunner] Failed to parse JSONL line: ${trimmed.slice(0, 100)}`);
-          }
+          if (trimmed) handleRaw(trimmed);
         }
       });
 
@@ -123,41 +205,55 @@ export class DockerRunner {
         stderrOutput += chunk.toString();
       });
 
-      child.on("close", (code) => {
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          try {
-            const result = JSON.parse(buffer.trim()) as DockerScanResult;
-            results.push(result);
-          } catch {
-            // ignore
-          }
-        }
+      // Timeout: 30 minutes per tool. Kill the container, not just the CLI.
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        killContainer("timed out after 30 minutes");
+      }, 30 * 60 * 1000);
+      let timedOut = false;
 
-        if (code !== 0) {
+      // Cancellation via AbortSignal — kill the container immediately.
+      const onAbort = (): void => {
+        aborted = true;
+        killContainer("cancelled");
+      };
+      let aborted = false;
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+
+      const cleanup = (): void => {
+        clearTimeout(timeout);
+        if (signal) signal.removeEventListener("abort", onAbort);
+      };
+
+      child.on("close", (code) => {
+        cleanup();
+        // Process any remaining buffered line.
+        const tail = buffer.trim();
+        if (tail) handleRaw(tail);
+
+        if (code !== 0 && !timedOut && !aborted) {
           logger.error(
             `[DockerRunner] ${tool} worker exited with code ${code}. stderr: ${stderrOutput.slice(0, 500)}`
           );
-          // Don't reject — return whatever results we got
         }
 
-        logger.info(`[DockerRunner] ${tool} worker completed. ${results.length} results.`);
-        resolve(results);
+        // Wait for all queued persistence to finish before resolving so callers
+        // observe a fully-persisted scan.
+        persistChain.finally(() => {
+          logger.info(
+            `[DockerRunner] ${tool} worker completed (${results.length} results${
+              timedOut ? ", timed out" : aborted ? ", cancelled" : ""
+            }).`
+          );
+          resolve(results);
+        });
       });
 
       child.on("error", (err) => {
+        cleanup();
         logger.error(`[DockerRunner] Failed to spawn docker for ${tool}: ${err.message}`);
-        clearTimeout(timeout);
         reject(err);
       });
-
-      // Timeout: 30 minutes per tool
-      const timeout = setTimeout(() => {
-        logger.warn(`[DockerRunner] ${tool} worker timed out after 30 minutes`);
-        child.kill("SIGTERM");
-      }, 30 * 60 * 1000);
-
-      child.on("close", () => clearTimeout(timeout));
     });
   }
 }

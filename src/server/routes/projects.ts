@@ -5,7 +5,12 @@ import { db } from "../../db/index.js";
 import { projects, scans } from "../../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
-import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import {
+  safeJsonParse,
+  asyncHandler,
+  redactProviderConfig,
+  mergeProviderSecrets,
+} from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const projectsRouter = Router();
@@ -39,7 +44,7 @@ projectsRouter.get("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
   return res.json(
     rows.map((p) => ({
       ...p,
-      providerConfig: safeJsonParse(p.providerConfig, {}),
+      providerConfig: redactProviderConfig(safeJsonParse(p.providerConfig, {})),
     }))
   );
 }));
@@ -69,7 +74,7 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
 
   return res.status(201).json({
     ...newProject,
-    providerConfig: parsed.data.providerConfig,
+    providerConfig: redactProviderConfig(parsed.data.providerConfig),
   });
 }));
 
@@ -98,7 +103,7 @@ projectsRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =
 
   return res.json({
     ...project,
-    providerConfig: safeJsonParse(project.providerConfig, {}),
+    providerConfig: redactProviderConfig(safeJsonParse(project.providerConfig, {})),
     recentScans: scanRows,
   });
 }));
@@ -106,7 +111,7 @@ projectsRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =
 // ─── PATCH /api/projects/:id ──────────────────────────────────────────────────
 projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const project = await db
-    .select({ id: projects.id })
+    .select()
     .from(projects)
     .where(
       and(eq(projects.id, req.params.id), eq(projects.userId, req.user!.id))
@@ -131,7 +136,11 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
   if (parsed.data.targetUrl !== undefined) updates.targetUrl = parsed.data.targetUrl;
   if (parsed.data.providerType !== undefined) updates.providerType = parsed.data.providerType;
   if (parsed.data.providerConfig !== undefined) {
-    updates.providerConfig = JSON.stringify(parsed.data.providerConfig);
+    // Preserve a stored apiKey/secret when the client saves without re-sending
+    // it (the redacted GET response never exposes it to begin with).
+    const storedConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
+    const merged = mergeProviderSecrets(parsed.data.providerConfig, storedConfig);
+    updates.providerConfig = JSON.stringify(merged);
   }
 
   await db.update(projects).set(updates).where(eq(projects.id, req.params.id));
@@ -144,7 +153,7 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
 
   return res.json({
     ...updated,
-    providerConfig: safeJsonParse(updated!.providerConfig, {}),
+    providerConfig: redactProviderConfig(safeJsonParse(updated!.providerConfig, {})),
   });
 }));
 

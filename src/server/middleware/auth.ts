@@ -84,3 +84,18 @@ export function generateToken(user: {
     }
   );
 }
+
+/**
+ * Mint a short-lived token that authenticates a backend/worker service call as
+ * a given user (e.g. the scan owner). Used for server-to-server calls such as
+ * the scan worker forwarding an Ollama request through the owner's browser
+ * relay, so the relay item is scoped to the correct user rather than trusting a
+ * user id supplied in the request body.
+ */
+export function generateInternalToken(userId: string): string {
+  return jwt.sign(
+    { email: "", role: "analyst", internal: true },
+    jwtSecret,
+    { subject: userId, expiresIn: "1h" }
+  );
+}

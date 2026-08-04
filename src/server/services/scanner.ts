@@ -2,12 +2,14 @@ import { v4 as uuid } from "uuid";
 import { db } from "../../db/index.js";
 import { scans, scanResults, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
-import { resolvePlugins, type PluginTool } from "../config/pluginCatalog.js";
+import { resolvePlugins, getPluginById, type PluginTool } from "../config/pluginCatalog.js";
 import { DockerRunner } from "./dockerRunner.js";
 import { gateway } from "./endpointGateway.js";
 import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
+import { assertUrlNotBlocked } from "../utils/urlValidation.js";
+import { generateInternalToken } from "../middleware/auth.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
@@ -65,8 +67,32 @@ type ResultCallback = (r: {
 export class ScanOrchestrator {
   private runner = new DockerRunner();
 
+  /** In-flight scans in THIS worker process → their AbortController. */
+  private activeScans = new Map<string, AbortController>();
+
+  /** Abort every in-flight scan (used on worker shutdown to kill containers). */
+  abortAll(): void {
+    for (const [scanId, controller] of this.activeScans) {
+      logger.info(`[Scanner] Aborting in-flight scan ${scanId} on shutdown`);
+      controller.abort();
+    }
+  }
+
+  /** Read the current persisted status (used to detect out-of-process cancel). */
+  private async isCancelled(scanId: string): Promise<boolean> {
+    const row = await db
+      .select({ status: scans.status })
+      .from(scans)
+      .where(eq(scans.id, scanId))
+      .get();
+    return row?.status === "cancelled";
+  }
+
   async run(scanId: string, onProgress?: (progress: number) => void): Promise<void> {
     logger.info(`[Scanner] Starting scan ${scanId}`);
+
+    const abort = new AbortController();
+    this.activeScans.set(scanId, abort);
 
     await db
       .update(scans)
@@ -76,6 +102,14 @@ export class ScanOrchestrator {
     try {
       const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
       if (!scan) throw new Error(`Scan ${scanId} not found`);
+
+      // Idempotent (re)start: clear any results from a previous attempt so a
+      // BullMQ retry doesn't leave orphaned rows and double-count findings.
+      await db.delete(scanResults).where(eq(scanResults.scanId, scanId));
+      await db
+        .update(scans)
+        .set({ passedTests: 0, failedTests: 0, progress: 0, errorMessage: null })
+        .where(eq(scans.id, scanId));
 
       const project = await db
         .select()
@@ -172,6 +206,14 @@ export class ScanOrchestrator {
 
       try {
       for (const tool of tools) {
+        // Stop between tools if the scan was cancelled (out-of-process cancel
+        // flips the DB status; abort kills any container mid-tool).
+        if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+          abort.abort();
+          logger.info(`[Scanner] Scan ${scanId} cancelled — stopping before ${tool}`);
+          break;
+        }
+
         const toolPlugins = byTool[tool];
         logger.info(`[Scanner] Running ${tool} with ${toolPlugins.length} plugins`);
 
@@ -182,11 +224,12 @@ export class ScanOrchestrator {
           providerConfig,
           plugins: toolPlugins,
           tool,
+          ownerUserId: scan.userId,
           ...(gatewayPort != null ? { gatewayPort } : {}),
         };
 
         if (tool === "promptfoo") {
-          await this.runPromptfoo(scanId, config, persistResult);
+          await this.runPromptfoo(scanId, config, persistResult, abort.signal);
         } else {
           try {
             await this.runner.run(tool, config, async (result) => {
@@ -201,7 +244,7 @@ export class ScanOrchestrator {
                 passed: result.passed,
                 evidence: JSON.stringify(result.evidence || {}),
               });
-            });
+            }, abort.signal);
           } catch (err) {
             // Docker not available or image not built — emit an error record per plugin
             const errMsg = errorMessage(err);
@@ -237,6 +280,24 @@ export class ScanOrchestrator {
       }
 
       const finalTotal = passedTests + failedTests;
+
+      // If the scan was cancelled (in- or out-of-process), record the partial
+      // results but do NOT overwrite the status back to "completed".
+      if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+        await db
+          .update(scans)
+          .set({
+            status: "cancelled",
+            completedAt: new Date(),
+            totalTests: finalTotal,
+            passedTests,
+            failedTests,
+          })
+          .where(eq(scans.id, scanId));
+        logger.info(`[Scanner] Scan ${scanId} cancelled — ${finalTotal} partial results kept`);
+        return;
+      }
+
       await db
         .update(scans)
         .set({
@@ -253,6 +314,16 @@ export class ScanOrchestrator {
         `[Scanner] Scan ${scanId} completed — ${finalTotal} tests, ${failedTests} findings`
       );
     } catch (err) {
+      // A cancellation can surface as a thrown error (e.g. an aborted fetch);
+      // don't mislabel it as "failed".
+      if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+        await db
+          .update(scans)
+          .set({ status: "cancelled", completedAt: new Date() })
+          .where(eq(scans.id, scanId));
+        logger.info(`[Scanner] Scan ${scanId} cancelled during execution`);
+        return;
+      }
       const message = errorMessage(err);
       logger.error(`[Scanner] Scan ${scanId} failed: ${message}`);
       await db
@@ -260,6 +331,8 @@ export class ScanOrchestrator {
         .set({ status: "failed", errorMessage: message, completedAt: new Date() })
         .where(eq(scans.id, scanId));
       throw err;
+    } finally {
+      this.activeScans.delete(scanId);
     }
   }
 
@@ -273,8 +346,10 @@ export class ScanOrchestrator {
       providerType: string;
       providerConfig: Record<string, unknown>;
       model?: string;
+      ownerUserId?: string;
     },
-    onResult: ResultCallback
+    onResult: ResultCallback,
+    signal?: AbortSignal
   ): Promise<void> {
     // Attempt dynamic import of promptfoo's evaluate API
     let pfEvaluate: ((cfg: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<any>) | null = null;
@@ -289,7 +364,7 @@ export class ScanOrchestrator {
 
     if (!pfEvaluate) {
       logger.warn("[Scanner][promptfoo] Package not available — results will show as errored");
-      return this.runPromptfooUnavailable(config, onResult);
+      return this.runPromptfooUnavailable(config, onResult, signal);
     }
 
     // ── Ollama: try direct call first, fall back to browser relay ──────────
@@ -301,11 +376,11 @@ export class ScanOrchestrator {
 
       if (directReachable) {
         logger.info(`[Scanner][promptfoo] Ollama reachable directly at ${ollamaUrl} — skipping browser relay`);
-        return this.runOllamaAttacksDirect(config, onResult);
+        return this.runOllamaAttacksDirect(config, onResult, signal);
       }
 
       logger.info(`[Scanner][promptfoo] Ollama not directly reachable — using browser relay`);
-      return this.runOllamaAttacksViaRelay(config, onResult);
+      return this.runOllamaAttacksViaRelay(config, onResult, signal);
     }
 
     // ── Custom / OpenAI-compatible: call endpoint directly ────────────────
@@ -314,12 +389,16 @@ export class ScanOrchestrator {
     // returns undefined when the response structure differs.  Direct calls
     // give us multiple fallback extraction paths and proper error handling.
     if (config.providerType === "custom" || !["openai", "anthropic", "azure-openai"].includes(config.providerType)) {
-      return this.runCustomEndpointAttacksDirect(config, onResult);
+      return this.runCustomEndpointAttacksDirect(config, onResult, signal);
     }
 
     const provider = this.buildProvider(config);
 
     for (const pluginId of config.plugins) {
+      if (signal?.aborted) {
+        logger.info("[Scanner][promptfoo] Cancelled — stopping evaluation");
+        return;
+      }
       const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
       const attacks = PLUGIN_ATTACKS[pfId];
 
@@ -440,9 +519,12 @@ export class ScanOrchestrator {
       providerConfig: Record<string, unknown>;
       model?: string;
     },
-    onResult: ResultCallback
+    onResult: ResultCallback,
+    signal?: AbortSignal
   ): Promise<void> {
-    const ollamaUrl = resolveForHost(resolveOllamaUrl(config.targetUrl));
+    const resolvedOllamaUrl = resolveOllamaUrl(config.targetUrl);
+    assertUrlNotBlocked(resolvedOllamaUrl);
+    const ollamaUrl = resolveForHost(resolvedOllamaUrl);
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
 
@@ -462,7 +544,7 @@ export class ScanOrchestrator {
       if (!resp.ok) throw new Error(`Ollama returned HTTP ${resp.status}`);
       const data = (await resp.json()) as { message?: { content?: string } };
       return { responseText: data.message?.content ?? "", extraEvidence: { direct: true } };
-    });
+    }, signal);
   }
 
   /**
@@ -480,8 +562,10 @@ export class ScanOrchestrator {
       targetUrl: string;
       providerConfig: Record<string, unknown>;
       model?: string;
+      ownerUserId?: string;
     },
-    onResult: ResultCallback
+    onResult: ResultCallback,
+    signal?: AbortSignal
   ): Promise<void> {
     const ollamaUrl = resolveForHost(resolveOllamaUrl(config.targetUrl));
     const model =
@@ -489,6 +573,12 @@ export class ScanOrchestrator {
     const port = process.env.PORT ?? "3000";
     const appUrl = process.env.EART_APP_URL ?? resolveForHost(`http://localhost:${port}`);
     const relayForwardUrl = `${appUrl}/api/ollama/relay/forward`;
+
+    // Authenticate the server-to-server forward call as the scan owner so the
+    // relay item is scoped to their browser (never trust a user id in the body).
+    const relayAuthHeader: Record<string, string> = config.ownerUserId
+      ? { Authorization: `Bearer ${generateInternalToken(config.ownerUserId)}` }
+      : {};
 
     logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
 
@@ -501,7 +591,7 @@ export class ScanOrchestrator {
         try {
           relayResp = await fetch(relayForwardUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...relayAuthHeader },
             body: JSON.stringify({
               ollamaUrl,
               path: "/api/chat",
@@ -530,7 +620,7 @@ export class ScanOrchestrator {
 
       const data = (await relayResp!.json()) as { message?: { content?: string } };
       return { responseText: data.message?.content ?? "", extraEvidence: { relay: true } };
-    });
+    }, signal);
   }
 
   /**
@@ -549,8 +639,10 @@ export class ScanOrchestrator {
       providerConfig: Record<string, unknown>;
       model?: string;
     },
-    onResult: ResultCallback
+    onResult: ResultCallback,
+    signal?: AbortSignal
   ): Promise<void> {
+    assertUrlNotBlocked(config.targetUrl);
     const targetUrl = resolveForHost(config.targetUrl);
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "gpt-4o-mini";
@@ -607,15 +699,17 @@ export class ScanOrchestrator {
           ...(responseText ? {} : { emptyResponse: true, rawStructure: JSON.stringify(data).slice(0, 300) }),
         },
       };
-    });
+    }, signal);
   }
 
   /** Emits error results for each plugin when the promptfoo package is not installed. */
   private async runPromptfooUnavailable(
     config: { plugins: string[] },
-    onResult: ResultCallback
+    onResult: ResultCallback,
+    signal?: AbortSignal
   ): Promise<void> {
     for (const pluginId of config.plugins) {
+      if (signal?.aborted) return;
       const pfId = pluginId.replace("promptfoo:", "");
       await onResult({
         tool: "promptfoo",
@@ -715,9 +809,14 @@ export class ScanOrchestrator {
     sendAttack: (attack: { prompt: string; failPattern: RegExp }) => Promise<{
       responseText: string;
       extraEvidence?: Record<string, unknown>;
-    }>
+    }>,
+    signal?: AbortSignal
   ): Promise<void> {
     for (const pluginId of plugins) {
+      if (signal?.aborted) {
+        logger.info(`${logPrefix} Cancelled — stopping attack loop`);
+        return;
+      }
       const pfId = PLUGIN_DISPLAY[pluginId] ?? pluginId.replace("promptfoo:", "");
       const attacks = PLUGIN_ATTACKS[pfId];
 
@@ -780,6 +879,11 @@ export class ScanOrchestrator {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private getSeverity(pluginId: string): "critical" | "high" | "medium" | "low" | "info" {
+    // Prefer the authoritative severity from the plugin catalog.
+    const plugin = getPluginById(pluginId);
+    if (plugin) return plugin.severity;
+
+    // Fallback heuristic for IDs not present in the catalog.
     if (
       pluginId.includes("injection") ||
       pluginId.includes("pii") ||
@@ -791,6 +895,11 @@ export class ScanOrchestrator {
   }
 
   private getOwasp(pluginId: string): string | null {
+    // The catalog carries the correct OWASP category for all 60 plugins; the
+    // previous 8-entry substring map left almost every finding uncategorised.
+    const plugin = getPluginById(pluginId);
+    if (plugin) return plugin.owaspCategory ?? null;
+
     const map: Record<string, string> = {
       "promptfoo:prompt-injection": "LLM01",
       "promptfoo:indirect-prompt-injection": "LLM01",
