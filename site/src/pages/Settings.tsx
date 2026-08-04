@@ -1,5 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type {
+  SmtpSettings as SmtpSettingsData,
+  RemediationSettings,
+  ModelsResponse,
+  InviteResponse,
+} from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { useAuthStore } from "@/store/authStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +37,7 @@ export default function Settings() {
   const createInviteMutation = useMutation({
     mutationFn: () => api.post("/auth/invite", { expiresInDays: 7 }),
     onSuccess: (res) => {
-      setInviteResult(res.data.code);
+      setInviteResult((res.data as InviteResponse).code);
     },
   });
 
@@ -171,7 +178,7 @@ function SmtpSettings() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings-smtp"],
-    queryFn: () => api.get("/settings/smtp").then((r) => r.data),
+    queryFn: () => api.get("/settings/smtp").then((r) => r.data as SmtpSettingsData),
   });
 
   useEffect(() => {
@@ -202,18 +209,18 @@ function SmtpSettings() {
       setPassword("");
       setTimeout(() => setSaveMsg(null), 3000);
     },
-    onError: (err: any) => {
-      setSaveMsg(err?.response?.data?.error ?? "Failed to save");
+    onError: (err) => {
+      setSaveMsg(apiErrorMessage(err) ?? "Failed to save");
     },
   });
 
   const testMutation = useMutation({
     mutationFn: () => api.post("/settings/smtp/test", { toEmail: testEmail }),
     onSuccess: () => setTestMsg({ ok: true, text: "Test email sent!" }),
-    onError: (err: any) =>
+    onError: (err) =>
       setTestMsg({
         ok: false,
-        text: err?.response?.data?.error ?? "Failed to send",
+        text: apiErrorMessage(err) ?? "Failed to send",
       }),
   });
 
@@ -380,7 +387,7 @@ function RemediationSettings() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["settings-remediation"],
-    queryFn: () => api.get("/settings/remediation").then((r) => r.data),
+    queryFn: () => api.get("/settings/remediation").then((r) => r.data as RemediationSettings),
   });
 
   useEffect(() => {
@@ -408,16 +415,16 @@ function RemediationSettings() {
           endpoint: ep || undefined,
           apiKey: key || undefined,
         });
-        const models = resp.data.models as Array<{ id: string; name: string }>;
+        const models = (resp.data as ModelsResponse).models;
         setDetectedModels(models);
         setModelStatus({ checking: false });
         // Auto-select first model if none selected
         if (models.length > 0 && !model) {
           setModel(models[0].id);
         }
-      } catch (err: any) {
+      } catch (err) {
         const msg =
-          err?.response?.data?.error ?? "Could not detect models";
+          apiErrorMessage(err) ?? "Could not detect models";
         setModelStatus({ checking: false, error: msg });
       }
     },
@@ -478,8 +485,8 @@ function RemediationSettings() {
       setApiKey("");
       setTimeout(() => setSaveMsg(null), 3000);
     },
-    onError: (err: any) => {
-      setSaveMsg(err?.response?.data?.error ?? "Failed to save");
+    onError: (err) => {
+      setSaveMsg(apiErrorMessage(err) ?? "Failed to save");
     },
   });
 
@@ -687,7 +694,7 @@ function RemediationSettings() {
         )}
         {testMutation.isError && (
           <p className="text-sm text-destructive">
-            Connection failed: {(testMutation.error as any)?.response?.data?.error ?? "Unknown error"}
+            Connection failed: {apiErrorMessage(testMutation.error) ?? "Unknown error"}
           </p>
         )}
       </CardContent>

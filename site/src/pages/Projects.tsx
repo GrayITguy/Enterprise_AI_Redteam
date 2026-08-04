@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { Project, ConnectivityCheck } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,7 +84,7 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
         targetUrl: url,
         providerType: "ollama",
       });
-      const data = res.data as { reachable: boolean; latencyMs: number; suggestion?: string };
+      const data = res.data as ConnectivityCheck;
       setServerStatus({
         checking: false,
         reachable: data.reachable,
@@ -112,7 +114,7 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     },
   });
 
-  const error = (mutation.error as any)?.response?.data?.error;
+  const error = apiErrorMessage(mutation.error);
 
   const placeholders: Record<string, string> = {
     ollama: "http://localhost:11434",
@@ -304,7 +306,7 @@ export default function Projects() {
 
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => api.get("/projects").then((r) => r.data as any[]),
+    queryFn: () => api.get("/projects").then((r) => r.data as Project[]),
   });
 
   const deleteMutation = useMutation({
@@ -363,7 +365,7 @@ export default function Projects() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project: any) => {
+          {projects.map((project) => {
             const Icon = PROVIDER_ICONS[project.providerType] ?? Server;
             return (
               <Card key={project.id} className="group relative hover:border-primary/50 transition-colors">

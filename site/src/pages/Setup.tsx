@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { AuthTokenResponse } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +21,7 @@ export default function Setup() {
   const setupMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post("/auth/setup", { email, password });
-      return res.data as { token: string; user: { id: string; email: string; role: "admin" | "analyst" | "viewer" } };
+      return res.data as AuthTokenResponse;
     },
     onSuccess: (data) => {
       setAuth(data.token, data.user);
@@ -34,7 +36,7 @@ export default function Setup() {
   };
 
   const passwordMismatch = confirm.length > 0 && password !== confirm;
-  const error = (setupMutation.error as any)?.response?.data?.error;
+  const error = apiErrorMessage(setupMutation.error);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

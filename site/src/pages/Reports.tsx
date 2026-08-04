@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { ScanListItem, ReportGenerateResponse } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { downloadFile } from "@/lib/downloadFile";
 export default function Reports() {
   const { data: scans = [] } = useQuery({
     queryKey: ["scans"],
-    queryFn: () => api.get("/scans").then((r) => (r.data as any[]).filter((s: any) => s.status === "completed")),
+    queryFn: () => api.get("/scans").then((r) => (r.data as ScanListItem[]).filter((s) => s.status === "completed")),
   });
 
   const [reportError, setReportError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export default function Reports() {
       setReportError(null);
       const res = await api.post(`/reports/${scanId}/generate`, { format });
       await downloadFile(
-        `/reports/${scanId}/download/${res.data.reportId}`,
+        `/reports/${scanId}/download/${(res.data as ReportGenerateResponse).reportId}`,
         `eart-report-${scanId.slice(0, 8)}.${format}`
       );
     } catch (err: any) {
@@ -60,7 +61,7 @@ export default function Reports() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {scans.map((scan: any) => (
+          {scans.map((scan) => (
             <Card key={scan.id}>
               <CardContent className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-4">

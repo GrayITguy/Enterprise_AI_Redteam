@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { Project, ScanCatalog, ConnectivityCheck, CreatedScan, Plugin } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -92,16 +94,16 @@ export default function ScanBuilder() {
 
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => api.get("/projects").then((r) => r.data as any[]),
+    queryFn: () => api.get("/projects").then((r) => r.data as Project[]),
   });
 
   const { data: catalog } = useQuery({
     queryKey: ["scan-catalog"],
-    queryFn: () => api.get("/scans/catalog").then((r) => r.data as any),
+    queryFn: () => api.get("/scans/catalog").then((r) => r.data as ScanCatalog),
   });
 
   // Pre-flight connectivity check — fires when a project is selected
-  const selectedProject = projects.find((p: any) => p.id === selectedProjectId);
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const { data: connCheck, isFetching: connChecking } = useQuery({
     queryKey: ["connectivity-check", selectedProjectId],
     queryFn: () =>
@@ -110,13 +112,7 @@ export default function ScanBuilder() {
           targetUrl: selectedProject?.targetUrl,
           providerType: selectedProject?.providerType,
         })
-        .then((r) => r.data as {
-          reachable: boolean;
-          latencyMs: number;
-          models?: string[];
-          error?: string;
-          suggestion?: string;
-        }),
+        .then((r) => r.data as ConnectivityCheck),
     enabled: !!selectedProjectId && !!selectedProject?.targetUrl,
     staleTime: 30_000,
     retry: false,
@@ -167,7 +163,7 @@ export default function ScanBuilder() {
       }
 
       const res = await api.post("/scans", body);
-      return res.data as any;
+      return res.data as CreatedScan;
     },
     onSuccess: (scan) => {
       navigate(`/scans/${scan.id}`);
@@ -201,7 +197,7 @@ export default function ScanBuilder() {
   const canSubmit = selectedProjectId && activePlugins.size > 0;
   const scheduledInPast =
     scheduleEnabled && scheduledAt && new Date(scheduledAt) <= new Date();
-  const error = (createScanMutation.error as any)?.response?.data?.error;
+  const error = apiErrorMessage(createScanMutation.error);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 p-6">
@@ -224,7 +220,7 @@ export default function ScanBuilder() {
               <SelectValue placeholder="Choose a project..." />
             </SelectTrigger>
             <SelectContent>
-              {projects.map((p: any) => (
+              {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   {p.name} — {p.providerType} · {p.targetUrl}
                 </SelectItem>
@@ -412,7 +408,7 @@ export default function ScanBuilder() {
                   {Object.entries(toolGroups).map(([tool, toolPlugins]) => (
                     <TabsContent key={tool} value={tool} className="mt-4">
                       <div className="grid gap-2 sm:grid-cols-2">
-                        {(toolPlugins as any[]).map((plugin: any) => (
+                        {(toolPlugins as Plugin[]).map((plugin) => (
                           <PluginCard
                             key={plugin.id}
                             plugin={plugin}
@@ -547,7 +543,7 @@ export default function ScanBuilder() {
           <p className="text-sm text-muted-foreground">
             {activePlugins.size} plugin{activePlugins.size !== 1 ? "s" : ""} ·{" "}
             {selectedProjectId
-              ? projects.find((p: any) => p.id === selectedProjectId)?.name ?? ""
+              ? projects.find((p) => p.id === selectedProjectId)?.name ?? ""
               : "no project selected"}
             {scheduleEnabled && scheduledAt && !scheduledInPast && (
               <> · scheduled {new Date(scheduledAt).toLocaleString()}</>
