@@ -8,10 +8,10 @@ EART is a self-hosted AI security testing dashboard that consolidates multiple r
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Node.js 22, Express, TypeScript (strict) |
-| Frontend | React 18, Vite, Tailwind CSS, Radix UI |
+| Backend | Node.js 24, Express 5, TypeScript (strict) |
+| Frontend | React 19, Vite, Tailwind CSS 4, Radix UI |
 | Database | SQLite (default) or PostgreSQL via Drizzle ORM |
-| Job Queue | BullMQ backed by Redis 7 |
+| Job Queue | BullMQ backed by Redis 8 |
 | AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
 | Python Workers | Garak, PyRIT, DeepTeam — spawned as Docker containers |
 | Scheduling | node-cron (polls every 5 min for recurring scans) |
@@ -40,7 +40,6 @@ EART is a self-hosted AI security testing dashboard that consolidates multiple r
 │   └── deepteam/
 ├── data/                       # SQLite DB + report storage (gitignored)
 ├── logs/                       # Application logs (gitignored)
-├── keys/                       # RSA license keys (gitignored)
 ├── scripts/                    # Build & utility scripts
 ├── docker-compose.yml          # 7-service orchestration
 ├── Dockerfile                  # Multi-stage: backend → frontend → runtime
@@ -52,7 +51,7 @@ EART is a self-hosted AI security testing dashboard that consolidates multiple r
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+ (24 LTS recommended)
 - Redis running locally (`redis-server`)
 - Docker + Docker Compose v2 (for Python workers)
 
@@ -68,7 +67,7 @@ cp .env.example .env
 # Edit .env — set a strong JWT_SECRET (64+ chars at minimum)
 
 # 3. Create required directories
-mkdir -p data/reports keys logs
+mkdir -p data/reports logs
 
 # 4. Run database migrations
 npm run db:migrate
@@ -92,7 +91,6 @@ The frontend dev server proxies `/api/*` to the backend automatically.
 | `npm run db:migrate` | Apply pending Drizzle migrations |
 | `npm run db:generate` | Generate migrations from schema changes |
 | `npm run db:studio` | Open Drizzle Studio GUI |
-| `npm run license:keygen` | Generate RSA key pair for license management |
 | `npm start` | Run compiled production server |
 | `npm run worker` | Run compiled production worker |
 
@@ -122,7 +120,6 @@ Key variables from `.env.example`:
 | `ANTHROPIC_API_KEY` | No | Enables Claude AI features |
 | `ANTHROPIC_MODEL` | No | Default `claude-haiku-4-5-20251001` |
 | `REPORT_DIR` | No | Default `./data/reports` |
-| `RSA_PUBLIC_KEY_PATH` | No | License validation public key |
 | `SMTP_HOST/PORT/USER/PASS` | No | Email notification config |
 | `CORS_ORIGIN` | No | Default `*` |
 | `GARAK_IMAGE` / `PYRIT_IMAGE` / `DEEPTEAM_IMAGE` | No | Python worker Docker image names |
@@ -148,10 +145,6 @@ docker compose --profile workers build
 ### AI-Powered Features
 
 The remediation engine and executive summary generator call Claude (via Anthropic SDK) or a local Ollama instance. Both are optional; the platform is fully functional without them.
-
-### License System
-
-Uses RSA key-pair validation. Free-tier limits (5 scans/month, Quick preset only, watermarked PDFs, no email) are defined but not yet fully enforced — enforcement is planned for a future update. Generate keys with `npm run license:keygen`. Keep `keys/` out of version control (already in `.gitignore`).
 
 ## Database
 

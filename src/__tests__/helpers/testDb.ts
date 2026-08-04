@@ -92,16 +92,6 @@ const CREATE_SCHEMA_SQL = `
     updated_by TEXT REFERENCES users(id)
   );
 
-  CREATE TABLE IF NOT EXISTS license_keys (
-    id TEXT PRIMARY KEY,
-    key_hash TEXT NOT NULL UNIQUE,
-    email TEXT,
-    seats INTEGER NOT NULL DEFAULT 1,
-    features TEXT NOT NULL DEFAULT '[]',
-    machine_id TEXT,
-    activated_at INTEGER,
-    expires_at INTEGER
-  );
 `;
 
 let schemaApplied = false;
@@ -123,7 +113,6 @@ export function clearTestDb(): void {
     DELETE FROM projects;
     DELETE FROM invite_codes;
     DELETE FROM app_settings;
-    DELETE FROM license_keys;
     DELETE FROM users;
   `);
 }

@@ -6,6 +6,20 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [2.1.0] — 2026-08-04
+
+### Changed
+- **EART is now 100% free and open source** — every feature is available to everyone, always. All references to paid tiers have been removed from the platform, docs, and UI.
+- **Dependency refresh to latest versions** across backend and frontend, including TypeScript 7 (native compiler), Vite 8 (Rolldown bundler), better-sqlite3 13, BullMQ 6, ioredis 6, Nodemailer 9, pdfkit 0.19, uuid 14, lucide-react 1.x, jsdom 30, and the latest Anthropic SDK, Radix UI, TanStack Query, React Router, Recharts, and Zod releases.
+- **Runtime upgrades** — Docker images now build on Node.js 24 LTS; Redis bumped to 8; GitHub Actions CI runs on Node 24 with `actions/checkout@v5` / `actions/setup-node@v5`.
+- **Vite config migrated to Rolldown** — `manualChunks` replaced with `advancedChunks`, `__dirname` replaced with `import.meta.dirname` for native config loading.
+- **Security overrides** — pinned `adm-zip`, `sharp`, and `undici` transitive dependencies to patched versions; backend `npm audit` is now clean.
+
+### Removed
+- **License key system** — the license activation API (`/api/license`), license validator, RSA keygen script, `license_keys` database table, License page, and `RSA_PUBLIC_KEY_PATH` configuration have all been removed. No license is needed: the platform is fully unlocked for everyone.
+
+---
+
 ## [2.0.0] — 2026-03-16
 
 ### Added
@@ -24,7 +38,6 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - **Full test suite** — backend unit/integration tests (Vitest + Supertest), frontend component tests (Vitest + React Testing Library), E2E tests (Playwright).
 - **Install scripts** — `scripts/install.sh` (Linux/macOS) and `scripts/install.bat` (Windows).
 - **CI pipeline** — GitHub Actions: type-check, tests, build on every push/PR.
-- **Free vs Pro tier** — README now clearly documents the free tier (5 scans/month, Quick preset, watermarked PDFs) and Pro license ($79 one-time).
 
 ### Changed
 - **Dependency upgrade to latest majors**: Express 4→5, React 18→19, Tailwind CSS 3→4, Vite 6→7, Zod 3→4, Drizzle ORM 0.38→0.45, Recharts 2→3, React Router 6→7, and many more.
@@ -58,7 +71,6 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - BullMQ scan queue backed by Redis with recurring scan scheduling (daily / weekly / monthly)
 - PDF and JSON report generation
 - Email notifications (always / failure-only / never)
-- RSA-based license management with free-tier enforcement
 - Docker Compose deployment with multi-stage Dockerfile
 - SQLite (default) or PostgreSQL via Drizzle ORM
 - Ollama integration for air-gapped / local model scanning

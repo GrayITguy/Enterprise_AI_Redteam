@@ -9,7 +9,6 @@ import { scansRouter } from "./routes/scans.js";
 import { resultsRouter } from "./routes/results.js";
 import { reportsRouter } from "./routes/reports.js";
 import { remediationRouter } from "./routes/remediation.js";
-import { licenseRouter } from "./routes/license.js";
 import { ollamaRouter } from "./routes/ollama.js";
 import { connectivityRouter } from "./routes/connectivity.js";
 import { settingsRouter } from "./routes/settings.js";
@@ -77,7 +76,7 @@ app.use("/api/auth", authLimiter);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
-    version: "2.0.0",
+    version: "2.1.0",
     timestamp: new Date().toISOString(),
   });
 });
@@ -89,7 +88,6 @@ app.use("/api/scans", scansRouter);
 app.use("/api/results", resultsRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/remediation", remediationRouter);
-app.use("/api/license", licenseRouter);
 app.use("/api/ollama", ollamaRouter);
 app.use("/api/connectivity", connectivityRouter);
 app.use("/api/settings", settingsRouter);

@@ -6,13 +6,13 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   test: {
     globals: true,
     environment: "jsdom",
-    setupFiles: [path.resolve(__dirname, "src/__tests__/setup.ts")],
+    setupFiles: [path.resolve(import.meta.dirname, "src/__tests__/setup.ts")],
     include: ["src/**/*.test.tsx", "src/**/*.test.ts"],
     coverage: {
       provider: "v8",

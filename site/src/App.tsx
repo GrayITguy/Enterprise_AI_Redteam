@@ -21,7 +21,6 @@ const ScanDetail = lazy(() => import("@/pages/ScanDetail"));
 const Results = lazy(() => import("@/pages/Results"));
 const Remediation = lazy(() => import("@/pages/Remediation"));
 const Reports = lazy(() => import("@/pages/Reports"));
-const License = lazy(() => import("@/pages/License"));
 const Settings = lazy(() => import("@/pages/Settings"));
 
 const queryClient = new QueryClient({
@@ -82,7 +81,6 @@ function AppRoutes() {
           <Route path="scans/:id/results" element={<Results />} />
           <Route path="scans/:id/remediate" element={<Remediation />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="license" element={<License />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 

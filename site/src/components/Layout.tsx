@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   LayoutDashboard, FolderOpen, ScanLine,
-  FileText, Key, Settings, LogOut, ChevronRight, Zap,
+  FileText, Settings, LogOut, ChevronRight, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,6 @@ const NAV_ITEMS = [
   { href: "/projects",  label: "Projects",  icon: FolderOpen },
   { href: "/scans/new", label: "New Scan",  icon: ScanLine },
   { href: "/reports",   label: "Reports",   icon: FileText },
-  { href: "/license",   label: "License",   icon: Key },
   { href: "/settings",  label: "Settings",  icon: Settings },
 ];
 

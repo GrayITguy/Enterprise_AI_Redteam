@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 1: Build backend TypeScript
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS backend-builder
+FROM node:24-alpine AS backend-builder
 RUN apk add --no-cache python3 make g++ && ln -sf /usr/bin/python3 /usr/bin/python
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN if [ -d src/db/migrations ]; then cp -r src/db/migrations dist/db/migrations
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2: Build frontend React app
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 WORKDIR /app/site
 
 COPY site/package*.json ./
@@ -29,7 +29,7 @@ RUN npm run build
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2.5: Production dependencies (with native module compilation)
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS prod-deps
+FROM node:24-alpine AS prod-deps
 RUN apk add --no-cache python3 make g++ && ln -sf /usr/bin/python3 /usr/bin/python
 WORKDIR /app
 COPY package*.json ./
@@ -38,7 +38,7 @@ RUN npm ci --omit=dev
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: Runtime image
 # ─────────────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:24-alpine AS runtime
 
 # Install docker CLI so Node.js can spawn Python worker containers
 RUN apk add --no-cache docker-cli wget
@@ -58,7 +58,7 @@ COPY --from=backend-builder /app/dist ./dist
 COPY --from=frontend-builder /app/site/dist ./site/dist
 
 # Create runtime directories
-RUN mkdir -p /data/reports /app/logs /app/keys
+RUN mkdir -p /data/reports /app/logs
 
 EXPOSE 3000
 

@@ -127,9 +127,6 @@ export const reports = sqliteTable("reports", {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// License Keys
-// ─────────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
 // App Settings (key-value platform configuration)
 // ─────────────────────────────────────────────────────────────────────────────
 export const appSettings = sqliteTable("app_settings", {
@@ -137,19 +134,4 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   updatedBy: text("updated_by").references(() => users.id),
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// License Keys
-// ─────────────────────────────────────────────────────────────────────────────
-export const licenseKeys = sqliteTable("license_keys", {
-  id: text("id").primaryKey(),
-  keyHash: text("key_hash").notNull().unique(),
-  email: text("email"),
-  seats: integer("seats").default(1).notNull(),
-  /** JSON array of feature flags */
-  features: text("features").notNull().default("[]"),
-  machineId: text("machine_id"),
-  activatedAt: integer("activated_at", { mode: "timestamp" }),
-  expiresAt: integer("expires_at", { mode: "timestamp" }),
 });
