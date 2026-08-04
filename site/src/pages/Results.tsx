@@ -1,6 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { ScanDetail, ScanResult, NarrativeResponse, ReportGenerateResponse } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { downloadFile } from "@/lib/downloadFile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -86,12 +88,12 @@ export default function Results() {
 
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
-    queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as any),
+    queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as ScanDetail),
   });
 
   const { data: results = [], isLoading } = useQuery({
     queryKey: ["scan-results", scanId],
-    queryFn: () => api.get(`/scans/${scanId}/results`).then((r) => r.data as any[]),
+    queryFn: () => api.get(`/scans/${scanId}/results`).then((r) => r.data as ScanResult[]),
     refetchInterval: scan?.status === "running" ? 5000 : false,
   });
 
@@ -99,7 +101,7 @@ export default function Results() {
     mutationFn: () =>
       api.post(`/reports/${scanId}/generate`, { format: "pdf" }),
     onSuccess: async (res) => {
-      const { reportId } = res.data;
+      const { reportId } = res.data as ReportGenerateResponse;
       await downloadFile(
         `/reports/${scanId}/download/${reportId}`,
         `eart-report-${scanId!.slice(0, 8)}.pdf`
@@ -109,7 +111,7 @@ export default function Results() {
 
   const narrativeMutation = useMutation({
     mutationFn: () =>
-      api.post(`/results/scans/${scanId}/narrative`).then((r) => r.data as { narrative: string }),
+      api.post(`/results/scans/${scanId}/narrative`).then((r) => r.data as NarrativeResponse),
     onSuccess: (data) => setNarrative(data.narrative),
   });
 
@@ -123,27 +125,27 @@ export default function Results() {
 
   const bySeverity = ["critical", "high", "medium", "low", "info"].map((sev) => ({
     name: sev.charAt(0).toUpperCase() + sev.slice(1),
-    count: results.filter((r: any) => r.severity === sev && !r.passed).length,
+    count: results.filter((r) => r.severity === sev && !r.passed).length,
     fill: SEVERITY_COLORS[sev],
   }));
 
   const byTool = ["promptfoo", "garak", "pyrit", "deepteam"].map((tool) => {
-    const tr = results.filter((r: any) => r.tool === tool);
-    return { tool, total: tr.length, failed: tr.filter((r: any) => !r.passed).length };
+    const tr = results.filter((r) => r.tool === tool);
+    return { tool, total: tr.length, failed: tr.filter((r) => !r.passed).length };
   }).filter((t) => t.total > 0);
 
   const owaspData = Object.keys(OWASP_NAMES).map((cat) => {
-    const catResults = results.filter((r: any) => r.owaspCategory === cat);
+    const catResults = results.filter((r) => r.owaspCategory === cat);
     const failRate = catResults.length > 0
-      ? Math.round((catResults.filter((r: any) => !r.passed).length / catResults.length) * 100)
+      ? Math.round((catResults.filter((r) => !r.passed).length / catResults.length) * 100)
       : 0;
     return { category: cat, fullName: OWASP_NAMES[cat], failRate };
   });
 
   const filtered = results
-    .filter((r: any) => severityFilter === "all" || r.severity === severityFilter)
-    .filter((r: any) => !showFailedOnly || !r.passed)
-    .sort((a: any, b: any) =>
+    .filter((r) => severityFilter === "all" || r.severity === severityFilter)
+    .filter((r) => !showFailedOnly || !r.passed)
+    .sort((a, b) =>
       (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
     );
 
@@ -162,7 +164,7 @@ export default function Results() {
           <Button
             variant="default"
             onClick={() => navigate(`/scans/${scanId}/remediate`)}
-            disabled={scan?.status !== "completed" || results.filter((r: any) => !r.passed).length === 0}
+            disabled={scan?.status !== "completed" || results.filter((r) => !r.passed).length === 0}
           >
             <Wrench className="mr-2 h-4 w-4" />
             Remediate
@@ -243,7 +245,7 @@ export default function Results() {
             <div className="flex items-start gap-2 text-sm text-destructive">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <span>
-                {(narrativeMutation.error as any)?.response?.data?.error ?? "Failed to generate summary"}
+                {apiErrorMessage(narrativeMutation.error) ?? "Failed to generate summary"}
               </span>
             </div>
           ) : (
@@ -288,7 +290,7 @@ export default function Results() {
             </Button>
           </div>
           <div className="space-y-2">
-            {filtered.map((result: any) => (
+            {filtered.map((result) => (
               <FindingRow key={result.id} result={result} />
             ))}
             {filtered.length === 0 && (

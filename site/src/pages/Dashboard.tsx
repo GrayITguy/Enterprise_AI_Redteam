@@ -1,5 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type {
+  Project,
+  ScanListItem,
+  ScanStats,
+  ScanHistoryItem,
+  UpcomingScan,
+} from "@/types/api";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -197,30 +204,30 @@ function CyberCardTitle({ children, icon: Icon }: { children: React.ReactNode; i
 export default function Dashboard() {
   const { data: projects } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => api.get("/projects").then((r) => r.data as any[]),
+    queryFn: () => api.get("/projects").then((r) => r.data as Project[]),
   });
 
   const { data: scans, isLoading } = useQuery({
     queryKey: ["scans"],
-    queryFn: () => api.get("/scans").then((r) => r.data as any[]),
+    queryFn: () => api.get("/scans").then((r) => r.data as ScanListItem[]),
     refetchInterval: 15_000,
   });
 
   const { data: stats } = useQuery({
     queryKey: ["scan-stats"],
-    queryFn: () => api.get("/scans/stats").then((r) => r.data as any),
+    queryFn: () => api.get("/scans/stats").then((r) => r.data as ScanStats),
     refetchInterval: 30_000,
   });
 
   const { data: history } = useQuery({
     queryKey: ["scan-history"],
-    queryFn: () => api.get("/scans/history").then((r) => r.data as any[]),
+    queryFn: () => api.get("/scans/history").then((r) => r.data as ScanHistoryItem[]),
     refetchInterval: 60_000,
   });
 
   const { data: upcoming } = useQuery({
     queryKey: ["scans-upcoming"],
-    queryFn: () => api.get("/scans/upcoming").then((r) => r.data as any[]),
+    queryFn: () => api.get("/scans/upcoming").then((r) => r.data as UpcomingScan[]),
     refetchInterval: 60_000,
   });
 
@@ -237,8 +244,8 @@ export default function Dashboard() {
 
   const completedScans = (scans ?? []).filter((s) => s.status === "completed");
   const runningScans   = (scans ?? []).filter((s) => s.status === "running");
-  const failedScans    = (scans ?? []).filter((s: any) => s.status === "failed");
-  const totalFailed    = completedScans.reduce((sum: number, s: any) => sum + s.failedTests, 0);
+  const failedScans    = (scans ?? []).filter((s) => s.status === "failed");
+  const totalFailed    = completedScans.reduce((sum, s) => sum + s.failedTests, 0);
 
   const passRate = completedScans.length > 0
     ? Math.round(

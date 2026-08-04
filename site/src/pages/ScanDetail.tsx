@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { ScanDetail as ScanDetailData } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,9 +21,9 @@ export default function ScanDetail() {
 
   const { data: scan, isLoading } = useQuery({
     queryKey: ["scan", id],
-    queryFn: () => api.get(`/scans/${id}`).then((r) => r.data as any),
+    queryFn: () => api.get(`/scans/${id}`).then((r) => r.data as ScanDetailData),
     refetchInterval: (query) => {
-      const scanData = query.state.data as { status?: string } | undefined;
+      const scanData = query.state.data as ScanDetailData | undefined;
       return scanData && !["completed", "failed", "cancelled"].includes(scanData.status ?? "")
         ? 3000
         : false;

@@ -1,6 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type {
+  ScanDetail,
+  RemediationSettings,
+  RemediationVerifyResponse,
+} from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -237,13 +243,13 @@ export default function Remediation() {
 
   const { data: scan } = useQuery({
     queryKey: ["scan", scanId],
-    queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as any),
+    queryFn: () => api.get(`/scans/${scanId}`).then((r) => r.data as ScanDetail),
   });
 
   const { data: remSettings } = useQuery({
     queryKey: ["settings-remediation"],
     queryFn: () =>
-      api.get("/settings/remediation").then((r) => r.data as { enabled: boolean }),
+      api.get("/settings/remediation").then((r) => r.data as RemediationSettings),
   });
 
   const remediationDisabled = remSettings?.enabled === false;
@@ -260,7 +266,7 @@ export default function Remediation() {
     mutationFn: () =>
       api
         .post(`/remediation/scans/${scanId}/verify`)
-        .then((r) => r.data as { id: string }),
+        .then((r) => r.data as RemediationVerifyResponse),
     onSuccess: (data) => navigate(`/scans/${data.id}`),
   });
 
@@ -357,7 +363,7 @@ export default function Remediation() {
               <div className="flex items-start gap-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
-                  {(generateMutation.error as any)?.response?.data?.error ??
+                  {apiErrorMessage(generateMutation.error) ??
                     "Failed to generate remediation plan"}
                 </span>
               </div>

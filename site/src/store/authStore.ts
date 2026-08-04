@@ -1,10 +1,7 @@
 import { create } from "zustand";
+import type { AuthUser } from "@/types/api";
 
-interface User {
-  id: string;
-  email: string;
-  role: "admin" | "analyst" | "viewer";
-}
+export type User = AuthUser;
 
 interface AuthState {
   token: string | null;

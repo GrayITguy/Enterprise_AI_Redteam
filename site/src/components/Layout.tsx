@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
 import { useNotificationStore } from "@/store/notificationStore";
 import { api } from "@/lib/api";
+import type { ScanListItem } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -87,11 +88,11 @@ export function Layout() {
 
   const { data: scans } = useQuery({
     queryKey: ["scans"],
-    queryFn: () => api.get("/scans").then((r) => r.data as any[]),
+    queryFn: () => api.get("/scans").then((r) => r.data as ScanListItem[]),
     refetchInterval: 15_000,
   });
 
-  const newCompletedCount = (scans ?? []).filter((s: any) => {
+  const newCompletedCount = (scans ?? []).filter((s) => {
     if (s.status !== "completed" || !s.completedAt) return false;
     return new Date(s.completedAt).getTime() > lastSeenAt;
   }).length;
