@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   server: {
@@ -24,10 +24,12 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "react-router-dom"],
-          charts: ["recharts"],
-          query: ["@tanstack/react-query"],
+        advancedChunks: {
+          groups: [
+            { name: "vendor", test: /node_modules[\\/](react|react-dom|react-router-dom)[\\/]/ },
+            { name: "charts", test: /node_modules[\\/]recharts[\\/]/ },
+            { name: "query", test: /node_modules[\\/]@tanstack[\\/]react-query[\\/]/ },
+          ],
         },
       },
     },

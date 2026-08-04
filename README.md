@@ -16,21 +16,9 @@ EART consolidates four best-in-class open-source red-teaming tools — [Promptfo
 
 ---
 
-## Free vs Pro
+## Free & Open Source
 
-EART is fully functional on the free tier. A one-time license key unlocks everything.
-
-| | Free | Pro ($79 one-time) |
-|---|---|---|
-| Scans per month | 5 | Unlimited |
-| Scan presets | Quick (10 plugins) | Quick + OWASP + Full (60 plugins) |
-| PDF reports | Watermarked | Clean |
-| Email notifications | — | Included |
-| AI remediation engine | Included | Included |
-| Ollama / local models | Included | Included |
-| Team roles (admin/analyst/viewer) | Included | Included |
-
-[Purchase a license at enterpriseairedteam.com](https://enterpriseairedteam.com)
+EART is **100% free and open source** under the MIT License — every feature, forever. Unlimited scans, all presets, all 60 plugins, clean PDF reports, email notifications, and the AI remediation engine are available to everyone with no license keys, tiers, or restrictions of any kind.
 
 ---
 
@@ -63,7 +51,7 @@ scripts\install.bat
 git clone https://github.com/grayitguy/enterpriseairedteam.git
 cd enterpriseairedteam
 cp .env.example .env        # Edit .env — set JWT_SECRET (openssl rand -hex 32)
-mkdir -p data/reports keys logs
+mkdir -p data/reports logs
 docker compose build
 docker compose up -d
 ```
@@ -92,7 +80,6 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 - **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` endpoints automatically bridged into Docker workers
 - **Reports** — PDF and JSON export per scan
 - **Team Access** — JWT auth with admin / analyst / viewer roles and invite-code registration
-- **License Management** — free tier included; activate a key to unlock unlimited scans
 
 ---
 
@@ -110,10 +97,10 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Node.js 22, Express 5, TypeScript (strict) |
-| Frontend | React 19, Vite 7, Tailwind CSS 4, Radix UI |
+| Backend | Node.js 24, Express 5, TypeScript (strict) |
+| Frontend | React 19, Vite 8, Tailwind CSS 4, Radix UI |
 | Database | SQLite (default) or PostgreSQL via Drizzle ORM |
-| Job Queue | BullMQ + Redis 7 |
+| Job Queue | BullMQ + Redis 8 |
 | AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
 | Python Workers | Garak 0.14+, PyRIT 0.11+, DeepTeam — Docker containers |
 | Auth | JWT + bcrypt; roles: admin / analyst / viewer |
@@ -160,13 +147,13 @@ Workers communicate via JSONL over Docker stdio:
 
 ### Prerequisites
 
-- Node.js 22+
-- Redis (`docker run -d -p 6379:6379 redis:7-alpine`)
+- Node.js 22+ (24 LTS recommended)
+- Redis (`docker run -d -p 6379:6379 redis:8-alpine`)
 
 ```bash
 npm install && cd site && npm install && cd ..
 cp .env.example .env
-mkdir -p data/reports keys logs
+mkdir -p data/reports logs
 npm run db:migrate
 
 # Three terminals:
@@ -187,7 +174,6 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 | `DATABASE_URL` | `./data/eart.db` | SQLite path or Postgres URL |
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
 | `REPORT_DIR` | `./data/reports` | PDF/JSON report storage |
-| `RSA_PUBLIC_KEY_PATH` | `./keys/license_public.pem` | License validation public key |
 | `ANTHROPIC_API_KEY` | — | Cloud fallback for AI features (not required with Ollama or Settings-configured provider) |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Anthropic model when using API key fallback |
 | `OLLAMA_URL` | *(auto-detected)* | Override Ollama endpoint for Docker deployments |
@@ -270,14 +256,6 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 |--------|------|-------------|
 | POST | `/api/connectivity/check` | Pre-flight endpoint reachability check |
 
-### License
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/license` | License status |
-| POST | `/api/license/activate` | Activate license key |
-
----
-
 ## Testing
 
 ```bash
@@ -301,6 +279,4 @@ CI runs type-check, tests, and build on every push/PR. See [`.github/workflows/c
 
 MIT License — see [LICENSE](LICENSE).
 
-EART is open source. The free tier is fully functional. A one-time commercial license key ($79) unlocks unlimited scans, all presets, clean PDF reports, and email notifications.
-
-[Purchase at enterpriseairedteam.com](https://enterpriseairedteam.com)
+EART is free and open-source software. Every feature is available to everyone, always — there are no paid tiers, license keys, or usage limits. Contributions are welcome!

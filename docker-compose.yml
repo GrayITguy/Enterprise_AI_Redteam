@@ -25,7 +25,6 @@ services:
       REPORT_DIR: /data/reports
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      RSA_PUBLIC_KEY_PATH: /app/keys/license_public.pem
       OLLAMA_URL: ${OLLAMA_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -35,7 +34,6 @@ services:
     volumes:
       - app-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./keys:/app/keys:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -88,7 +86,7 @@ services:
   # Redis (BullMQ queue + optional caching)
   # ─────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: eart-redis
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
