@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../../db/index.js";
+import { db, getRow, getRows } from "../../db/index.js";
 import { scanResults, scans, projects } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
@@ -32,7 +32,7 @@ remediationRouter.post(
       });
     }
 
-    const scan = await db
+    const scan = await getRow(db
       .select({
         id: scans.id,
         status: scans.status,
@@ -44,7 +44,7 @@ remediationRouter.post(
       .where(
         and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id))
       )
-      .get();
+      );
 
     if (!scan) return res.status(404).json({ error: "Scan not found" });
     if (scan.status !== "completed") {
@@ -54,7 +54,7 @@ remediationRouter.post(
     }
 
     // Fetch the project to understand the target configuration and its LLM provider
-    const project = await db
+    const project = await getRow(db
       .select({
         name: projects.name,
         targetUrl: projects.targetUrl,
@@ -63,7 +63,7 @@ remediationRouter.post(
       })
       .from(projects)
       .where(eq(projects.id, scan.projectId))
-      .get();
+      );
 
     const providerConfig = project
       ? safeJsonParse<Record<string, unknown>>(project.providerConfig, {})
@@ -71,11 +71,11 @@ remediationRouter.post(
     const systemPrompt = (providerConfig.systemPrompt as string) || "(none configured)";
 
     // Fetch all results
-    const results = await db
+    const results = await getRows(db
       .select()
       .from(scanResults)
       .where(eq(scanResults.scanId, req.params.scanId))
-      .all();
+      );
 
     const failures = results.filter((r) => !r.passed);
 
@@ -178,7 +178,7 @@ remediationRouter.post(
     const { v4: uuid } = await import("uuid");
     const { scanQueue } = await import("../services/queue.js");
 
-    const scan = await db
+    const scan = await getRow(db
       .select({
         id: scans.id,
         projectId: scans.projectId,
@@ -189,7 +189,7 @@ remediationRouter.post(
       .where(
         and(eq(scans.id, req.params.scanId), eq(scans.userId, req.user!.id))
       )
-      .get();
+      );
 
     if (!scan) return res.status(404).json({ error: "Scan not found" });
     if (scan.status !== "completed") {
@@ -199,7 +199,7 @@ remediationRouter.post(
     }
 
     // Get the failed results to determine which plugins to re-run
-    const failedResults = await db
+    const failedResults = await getRows(db
       .select({ tool: scanResults.tool, category: scanResults.category })
       .from(scanResults)
       .where(
@@ -208,7 +208,7 @@ remediationRouter.post(
           eq(scanResults.passed, false)
         )
       )
-      .all();
+      );
 
     if (failedResults.length === 0) {
       return res

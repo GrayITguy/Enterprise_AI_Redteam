@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import { db } from "../../db/index.js";
+import { db, getRow } from "../../db/index.js";
 import { scans, scanResults, projects } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { resolvePlugins, getPluginById, type PluginTool } from "../config/pluginCatalog.js";
@@ -94,11 +94,11 @@ export class ScanOrchestrator {
 
   /** Read the current persisted status (used to detect out-of-process cancel). */
   private async isCancelled(scanId: string): Promise<boolean> {
-    const row = await db
+    const row = await getRow(db
       .select({ status: scans.status })
       .from(scans)
       .where(eq(scans.id, scanId))
-      .get();
+      );
     return row?.status === "cancelled";
   }
 
@@ -127,7 +127,7 @@ export class ScanOrchestrator {
       .where(eq(scans.id, scanId));
 
     try {
-      const scan = await db.select().from(scans).where(eq(scans.id, scanId)).get();
+      const scan = await getRow(db.select().from(scans).where(eq(scans.id, scanId)));
       if (!scan) throw new Error(`Scan ${scanId} not found`);
 
       // Idempotent (re)start: clear any results from a previous attempt so a
@@ -138,11 +138,11 @@ export class ScanOrchestrator {
         .set({ passedTests: 0, failedTests: 0, progress: 0, errorMessage: null })
         .where(eq(scans.id, scanId));
 
-      const project = await db
+      const project = await getRow(db
         .select()
         .from(projects)
         .where(eq(projects.id, scan.projectId))
-        .get();
+        );
       if (!project) throw new Error(`Project ${scan.projectId} not found`);
 
       const pluginIds: string[] = safeJsonParse(scan.plugins, []);

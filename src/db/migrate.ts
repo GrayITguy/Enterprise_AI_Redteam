@@ -1,5 +1,5 @@
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { db, sqlite } from "./index.js";
+import { db, sqlite, pgClient, isPostgres } from "./index.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -7,6 +7,11 @@ import fs from "fs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function runMigrations(): Promise<void> {
+  if (isPostgres) {
+    await applyPostgresSchema();
+    return;
+  }
+
   const migrationsFolder = path.join(__dirname, "migrations");
   const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
   const hasMigrations = fs.existsSync(journalPath);
@@ -140,6 +145,110 @@ function applySchemaDirectly(): void {
   }
 
   console.log("[DB] Schema applied directly (development mode)");
+}
+
+/**
+ * PostgreSQL bootstrap. Mirrors the SQLite DDL above with Postgres column types
+ * (text, timestamptz, boolean, integer). Idempotent — CREATE TABLE IF NOT EXISTS
+ * — so it is safe to run on every boot.
+ */
+async function applyPostgresSchema(): Promise<void> {
+  if (!pgClient) throw new Error("Postgres client not initialized");
+
+  await pgClient.unsafe(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'analyst' CHECK (role IN ('admin','analyst','viewer')),
+      invite_code TEXT,
+      created_at TIMESTAMPTZ NOT NULL,
+      last_login_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      created_by TEXT NOT NULL REFERENCES users(id),
+      used_by TEXT REFERENCES users(id),
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL,
+      description TEXT,
+      target_url TEXT NOT NULL,
+      provider_type TEXT NOT NULL CHECK (provider_type IN ('ollama','openai','anthropic','custom')),
+      provider_config TEXT NOT NULL DEFAULT '{}',
+      is_archived BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scans (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      user_id TEXT NOT NULL REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed','cancelled')),
+      preset TEXT,
+      plugins TEXT NOT NULL DEFAULT '[]',
+      total_tests INTEGER NOT NULL DEFAULT 0,
+      passed_tests INTEGER NOT NULL DEFAULT 0,
+      failed_tests INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT,
+      scheduled_at TIMESTAMPTZ,
+      recurrence TEXT,
+      notify_on TEXT,
+      progress INTEGER NOT NULL DEFAULT 0,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scan_results (
+      id TEXT PRIMARY KEY,
+      scan_id TEXT NOT NULL REFERENCES scans(id),
+      tool TEXT NOT NULL CHECK (tool IN ('promptfoo','garak','pyrit','deepteam')),
+      category TEXT NOT NULL,
+      severity TEXT NOT NULL CHECK (severity IN ('critical','high','medium','low','info')),
+      test_name TEXT NOT NULL,
+      owasp_category TEXT,
+      prompt TEXT,
+      response TEXT,
+      passed BOOLEAN NOT NULL,
+      evidence TEXT NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS reports (
+      id TEXT PRIMARY KEY,
+      scan_id TEXT NOT NULL REFERENCES scans(id),
+      format TEXT NOT NULL CHECK (format IN ('pdf','json','html','csv')),
+      file_path TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      updated_by TEXT REFERENCES users(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_scans_project_id ON scans(project_id);
+    CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id);
+    CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
+    CREATE INDEX IF NOT EXISTS idx_scan_results_scan_id ON scan_results(scan_id);
+    CREATE INDEX IF NOT EXISTS idx_scan_results_severity ON scan_results(severity);
+    CREATE INDEX IF NOT EXISTS idx_reports_scan_id ON reports(scan_id);
+  `);
+
+  console.log("[DB] PostgreSQL schema applied");
 }
 
 // Allow direct execution: tsx src/db/migrate.ts
