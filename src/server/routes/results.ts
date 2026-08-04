@@ -169,7 +169,7 @@ Write the summary covering: overall risk posture, most significant vulnerabiliti
       ? { providerType: project.providerType, targetUrl: project.targetUrl, providerConfig }
       : null;
     const narrative = await callWithSettingsFallback(
-      prompt, projectInfo, maxCompletionTokens, contextWindow
+      prompt, projectInfo, maxCompletionTokens, contextWindow, req.user!.id
     );
     return res.json({ narrative });
   } catch (err) {

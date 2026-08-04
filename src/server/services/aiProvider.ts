@@ -12,6 +12,7 @@ import { resolveOllamaUrl, errorMessage, safeJsonParse } from "../utils/helpers.
 import { getSetting } from "./settingsService.js";
 import { getContextWindow, getContextWindowWithDefault } from "../utils/tokenBudget.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
+import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 
 /** Lazily import the Anthropic SDK (avoids top-level import when unused). */
 async function loadAnthropicSdk() {
@@ -32,7 +33,8 @@ export async function callWithSettingsFallback(
   prompt: string,
   project: ProjectInfo | null,
   maxTokens = 4096,
-  contextWindow?: number
+  contextWindow?: number,
+  ownerUserId?: string
 ): Promise<string> {
   // 1. Check if admin configured a dedicated remediation provider in settings
   const remProviderType = await getSetting("remediation.providerType");
@@ -51,7 +53,8 @@ export async function callWithSettingsFallback(
       (remConfig.endpoint as string) ?? "",
       remConfig,
       maxTokens,
-      contextWindow
+      contextWindow,
+      ownerUserId
     );
   }
 
@@ -62,7 +65,8 @@ export async function callWithSettingsFallback(
     project?.targetUrl ?? "",
     project?.providerConfig ?? {},
     maxTokens,
-    contextWindow
+    contextWindow,
+    ownerUserId
   );
 }
 
@@ -85,7 +89,8 @@ async function callLLM(
   targetUrl: string,
   providerConfig: Record<string, unknown>,
   maxTokens: number,
-  contextWindow?: number
+  contextWindow?: number,
+  ownerUserId?: string
 ): Promise<string> {
   const model = (providerConfig.model as string) || "";
   const effectiveCtx = contextWindow ?? getContextWindowWithDefault(model, providerType);
@@ -93,7 +98,7 @@ async function callLLM(
 
   // 1. Try the specified provider
   try {
-    const text = await callProvider(prompt, providerType, targetUrl, providerConfig, model, maxTokens, effectiveCtx);
+    const text = await callProvider(prompt, providerType, targetUrl, providerConfig, model, maxTokens, effectiveCtx, ownerUserId);
     if (text) return text;
     lastError = `${providerType} provider returned an empty response`;
     logger.warn(`[AI] ${lastError}`);
@@ -137,11 +142,13 @@ async function callProvider(
   providerConfig: Record<string, unknown>,
   model: string,
   maxTokens: number,
-  contextWindow: number
+  contextWindow: number,
+  ownerUserId?: string
 ): Promise<string | null> {
   switch (providerType) {
     case "ollama": {
       const originalUrl = resolveOllamaUrl(targetUrl);
+      assertUrlNotBlocked(originalUrl);
       const url = resolveForHost(originalUrl);
 
       // Only set num_ctx when the model is known — for unknown models, let
@@ -198,8 +205,13 @@ async function callProvider(
       // Direct connection failed (network error) — relay through the browser.
       // Use originalUrl (not the Docker-resolved one) so the browser can reach
       // localhost:11434 on the user's machine.
+      if (!ownerUserId) {
+        throw new Error(
+          "Ollama is not reachable directly and no user context is available for the browser relay."
+        );
+      }
       const { queueRelayRequest } = await import("./ollamaRelay.js");
-      const data = (await queueRelayRequest(originalUrl, "/api/chat", ollamaBody, timeoutMs)) as {
+      const data = (await queueRelayRequest(ownerUserId, originalUrl, "/api/chat", ollamaBody, timeoutMs)) as {
         message?: { content?: string };
       };
       return data.message?.content ?? null;
@@ -208,7 +220,9 @@ async function callProvider(
     case "openai": {
       const apiKey = providerConfig.apiKey as string | undefined;
       if (!apiKey) throw new Error("OpenAI API key not configured — save your key in Settings → AI Remediation");
-      const base = resolveForHost((targetUrl || "https://api.openai.com").replace(/\/+$/, ""));
+      const openaiBase = (targetUrl || "https://api.openai.com").replace(/\/+$/, "");
+      assertUrlNotBlocked(openaiBase);
+      const base = resolveForHost(openaiBase);
       const resp = await fetch(`${base}/v1/chat/completions`, {
         method: "POST",
         headers: {
@@ -266,6 +280,7 @@ async function callProvider(
     case "custom":
     default: {
       if (!targetUrl) throw new Error("Custom provider endpoint URL not configured");
+      assertUrlNotBlocked(targetUrl);
       const resolvedUrl = resolveForHost(targetUrl);
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

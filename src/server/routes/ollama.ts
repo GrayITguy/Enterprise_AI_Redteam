@@ -7,7 +7,7 @@ import {
   rejectRelayRequest,
 } from "../services/ollamaRelay.js";
 import { errorMessage, asyncHandler } from "../utils/helpers.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { ALLOWED_TARGET_HOSTS } from "../utils/urlValidation.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 
@@ -89,7 +89,7 @@ ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => 
  * Queues an Ollama API call for the browser relay and waits (up to 120 s) for
  * the browser to fulfill it.  Returns the raw Ollama response JSON.
  */
-ollamaRouter.post("/relay/forward", asyncHandler(async (req: Request, res: Response) => {
+ollamaRouter.post("/relay/forward", asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { ollamaUrl, path, body } = req.body as {
     ollamaUrl?: string;
     path?: string;
@@ -102,7 +102,9 @@ ollamaRouter.post("/relay/forward", asyncHandler(async (req: Request, res: Respo
   }
 
   try {
-    const result = await queueRelayRequest(ollamaUrl, path, body ?? {});
+    // Scope the queued item to the authenticated user (the scan owner, via an
+    // internal token) so only their browser can receive and fulfill it.
+    const result = await queueRelayRequest(req.user!.id, ollamaUrl, path, body ?? {});
     res.json(result);
   } catch (err: unknown) {
     const message = errorMessage(err);
@@ -117,8 +119,8 @@ ollamaRouter.post("/relay/forward", asyncHandler(async (req: Request, res: Respo
  * request; responds with { requestId, ollamaUrl, path, body } when one is
  * available, or { idle: true } on timeout.
  */
-ollamaRouter.get("/relay/poll", asyncHandler(async (_req: Request, res: Response) => {
-  const item = await pollNextRequest(30_000);
+ollamaRouter.get("/relay/poll", asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const item = await pollNextRequest(req.user!.id, 30_000);
   if (!item) {
     res.json({ idle: true });
     return;
@@ -132,7 +134,7 @@ ollamaRouter.get("/relay/poll", asyncHandler(async (_req: Request, res: Response
  * Body: { requestId: string, data?: object, error?: string }
  * Called by the browser after it has fetched the Ollama response.
  */
-ollamaRouter.post("/relay/fulfill", (req: Request, res: Response) => {
+ollamaRouter.post("/relay/fulfill", (req: AuthenticatedRequest, res: Response) => {
   const { requestId, data, error } = req.body as {
     requestId?: string;
     data?: unknown;
@@ -145,9 +147,9 @@ ollamaRouter.post("/relay/fulfill", (req: Request, res: Response) => {
   }
 
   if (error) {
-    rejectRelayRequest(requestId, error);
+    rejectRelayRequest(requestId, req.user!.id, error);
   } else {
-    fulfillRelayRequest(requestId, data);
+    fulfillRelayRequest(requestId, req.user!.id, data);
   }
 
   res.json({ ok: true });

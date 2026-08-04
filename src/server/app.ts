@@ -76,7 +76,7 @@ app.use("/api/auth", authLimiter);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
-    version: "2.1.0",
+    version: "2.2.0",
     timestamp: new Date().toISOString(),
   });
 });

@@ -11,13 +11,20 @@ interface RelayItem {
   body: unknown;
 }
 
+/** Internal queue entry — carries the owning user so items are never shared. */
+interface QueuedItem extends RelayItem {
+  userId: string;
+}
+
 interface PendingRequest {
+  userId: string;
   resolve: (data: unknown) => void;
   reject: (err: Error) => void;
   timeout: NodeJS.Timeout;
 }
 
 interface PollWaiter {
+  userId: string;
   resolve: (item: RelayItem | null) => void;
   timeout: NodeJS.Timeout;
 }
@@ -28,37 +35,44 @@ interface PollWaiter {
 const pendingRequests = new Map<string, PendingRequest>();
 
 /** Queued items not yet picked up by the browser. */
-const itemQueue: RelayItem[] = [];
+const itemQueue: QueuedItem[] = [];
 
 /** Browser long-poll waiters — resolved when an item arrives. */
 const pollWaiters: PollWaiter[] = [];
 
+/** Strip the internal `userId` before an item is handed to a browser. */
+function toRelayItem(q: QueuedItem): RelayItem {
+  return { requestId: q.requestId, ollamaUrl: q.ollamaUrl, path: q.path, body: q.body };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Queue an Ollama request for the browser to fulfill.
+ * Queue an Ollama request for the owning user's browser to fulfill.
  *
- * The browser polls GET /api/ollama/relay/poll, receives this item, calls the
- * real Ollama on the user's machine, then POSTs the result to
- * POST /api/ollama/relay/fulfill.  This function returns a Promise that
- * resolves with that result (or rejects after 120 s).
+ * Every request is scoped to `userId`: only that user's browser (polling with
+ * their own JWT) can receive the item or post a response back for it. This
+ * prevents one authenticated user from siphoning another user's scan prompts
+ * off the queue or injecting fabricated LLM responses into their results.
  */
 export function queueRelayRequest(
+  userId: string,
   ollamaUrl: string,
   path: string,
   body: unknown,
   timeoutMs = getOllamaTimeoutMs()
 ): Promise<unknown> {
   const requestId = uuid();
-  const item: RelayItem = { requestId, ollamaUrl, path, body };
+  const item: QueuedItem = { requestId, userId, ollamaUrl, path, body };
 
-  logger.debug(`[OllamaRelay] Queuing request ${requestId} → ${ollamaUrl}${path}`);
+  logger.debug(`[OllamaRelay] Queuing request ${requestId} (user ${userId}) → ${ollamaUrl}${path}`);
 
-  // Wake a poll waiter immediately if one is waiting, otherwise push to queue.
-  if (pollWaiters.length > 0) {
-    const waiter = pollWaiters.shift()!;
-    clearTimeout(waiter.timeout);
-    waiter.resolve(item);
+  // Wake a poll waiter belonging to the SAME user, otherwise push to the queue.
+  const waiterIdx = pollWaiters.findIndex((w) => w.userId === userId);
+  if (waiterIdx !== -1) {
+    const [waiter] = pollWaiters.splice(waiterIdx, 1);
+    clearTimeout(waiter!.timeout);
+    waiter!.resolve(toRelayItem(item));
   } else {
     itemQueue.push(item);
   }
@@ -77,35 +91,47 @@ export function queueRelayRequest(
       }
     }, timeoutMs);
 
-    pendingRequests.set(requestId, { resolve, reject, timeout });
+    pendingRequests.set(requestId, { userId, resolve, reject, timeout });
   });
 }
 
 /**
- * Long-poll: returns the next queued item immediately, or waits up to
- * `timeoutMs` milliseconds before returning null (idle signal).
+ * Long-poll for the given user: returns the next queued item owned by `userId`
+ * immediately, or waits up to `timeoutMs` before returning null (idle signal).
  */
-export function pollNextRequest(timeoutMs = 30_000): Promise<RelayItem | null> {
-  if (itemQueue.length > 0) {
-    return Promise.resolve(itemQueue.shift()!);
+export function pollNextRequest(userId: string, timeoutMs = 30_000): Promise<RelayItem | null> {
+  const idx = itemQueue.findIndex((i) => i.userId === userId);
+  if (idx !== -1) {
+    const [item] = itemQueue.splice(idx, 1);
+    return Promise.resolve(toRelayItem(item!));
   }
 
   return new Promise<RelayItem | null>((resolve) => {
     const timeout = setTimeout(() => {
-      const idx = pollWaiters.findIndex((w) => w.resolve === resolve);
-      if (idx !== -1) pollWaiters.splice(idx, 1);
+      const wIdx = pollWaiters.findIndex((w) => w.resolve === resolve);
+      if (wIdx !== -1) pollWaiters.splice(wIdx, 1);
       resolve(null);
     }, timeoutMs);
 
-    pollWaiters.push({ resolve, timeout });
+    pollWaiters.push({ userId, resolve, timeout });
   });
 }
 
-/** Resolve a pending relay request with the Ollama response data. */
-export function fulfillRelayRequest(requestId: string, data: unknown): void {
+/**
+ * Resolve a pending relay request with the Ollama response data.
+ * The `userId` must match the user who queued the request, otherwise the call
+ * is ignored — a user can only fulfill their own requests.
+ */
+export function fulfillRelayRequest(requestId: string, userId: string, data: unknown): void {
   const pending = pendingRequests.get(requestId);
   if (!pending) {
     logger.warn(`[OllamaRelay] fulfillRelayRequest: unknown requestId ${requestId}`);
+    return;
+  }
+  if (pending.userId !== userId) {
+    logger.warn(
+      `[OllamaRelay] fulfillRelayRequest: user ${userId} attempted to fulfill request ${requestId} owned by another user — ignored`
+    );
     return;
   }
   clearTimeout(pending.timeout);
@@ -114,11 +140,20 @@ export function fulfillRelayRequest(requestId: string, data: unknown): void {
   pending.resolve(data);
 }
 
-/** Reject a pending relay request with an error message. */
-export function rejectRelayRequest(requestId: string, error: string): void {
+/**
+ * Reject a pending relay request with an error message.
+ * Scoped to the owning user, exactly like {@link fulfillRelayRequest}.
+ */
+export function rejectRelayRequest(requestId: string, userId: string, error: string): void {
   const pending = pendingRequests.get(requestId);
   if (!pending) {
     logger.warn(`[OllamaRelay] rejectRelayRequest: unknown requestId ${requestId}`);
+    return;
+  }
+  if (pending.userId !== userId) {
+    logger.warn(
+      `[OllamaRelay] rejectRelayRequest: user ${userId} attempted to reject request ${requestId} owned by another user — ignored`
+    );
     return;
   }
   clearTimeout(pending.timeout);

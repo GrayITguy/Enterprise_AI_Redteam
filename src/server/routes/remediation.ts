@@ -140,7 +140,7 @@ remediationRouter.post(
         ? { providerType: project.providerType, targetUrl: project.targetUrl, providerConfig }
         : null;
       const responseText = await callWithSettingsFallback(
-        prompt, projectInfo, maxCompletionTokens, contextWindow
+        prompt, projectInfo, maxCompletionTokens, contextWindow, req.user!.id
       );
 
       // Parse the JSON from the LLM response

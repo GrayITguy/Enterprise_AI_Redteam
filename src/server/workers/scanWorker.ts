@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { v4 as uuid } from "uuid";
-import { redisConnection, type ScanJobData } from "../services/queue.js";
+import { redisConnection, scanQueue, type ScanJobData } from "../services/queue.js";
 import { ScanOrchestrator } from "../services/scanner.js";
 import { logger } from "../utils/logger.js";
 import { db } from "../../db/index.js";
@@ -9,6 +9,40 @@ import { eq } from "drizzle-orm";
 import { sendScanCompleteEmail } from "../services/emailService.js";
 
 const orchestrator = new ScanOrchestrator();
+
+/**
+ * Recover scans left in "running" by a previous worker crash/restart. A scan is
+ * only orphaned if no BullMQ job for it is still active or waiting; otherwise
+ * BullMQ will resume it and the orchestrator will re-run it cleanly.
+ */
+async function recoverStaleScans(): Promise<void> {
+  try {
+    const running = await db
+      .select({ id: scans.id })
+      .from(scans)
+      .where(eq(scans.status, "running"))
+      .all();
+
+    for (const { id } of running) {
+      const job = await scanQueue.getJob(id).catch(() => null);
+      const state = job ? await job.getState().catch(() => null) : null;
+      const stillLive = state === "active" || state === "waiting" || state === "delayed";
+      if (!stillLive) {
+        await db
+          .update(scans)
+          .set({
+            status: "failed",
+            errorMessage: "Interrupted by a worker restart — please re-run this scan.",
+            completedAt: new Date(),
+          })
+          .where(eq(scans.id, id));
+        logger.warn(`[Worker] Recovered stale running scan ${id} → failed`);
+      }
+    }
+  } catch (err) {
+    logger.error(`[Worker] Stale-scan recovery error: ${err}`);
+  }
+}
 
 const worker = new Worker<ScanJobData>(
   "scans",
@@ -130,19 +164,20 @@ worker.on("error", (err) => {
   logger.error(`[Worker] Worker error: ${err.message}`);
 });
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  logger.info("[Worker] Shutting down gracefully...");
+// Graceful shutdown — abort in-flight scans first so their Docker worker
+// containers are killed rather than orphaned.
+async function shutdown(reason: string): Promise<void> {
+  logger.info(`[Worker] ${reason} — shutting down gracefully...`);
+  orchestrator.abortAll();
   await worker.close();
   await redisConnection.quit();
   process.exit(0);
-});
+}
 
-process.on("SIGINT", async () => {
-  logger.info("[Worker] Interrupted, shutting down...");
-  await worker.close();
-  await redisConnection.quit();
-  process.exit(0);
-});
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("Interrupted"));
+
+// Clean up any scans orphaned by a previous crash before accepting new work.
+void recoverStaleScans();
 
 logger.info("[Worker] Scan worker started, waiting for jobs...");

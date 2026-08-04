@@ -134,7 +134,7 @@ export default function Settings() {
           <CardTitle className="text-base">About</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>Enterprise AI Red Team Platform v2.1.0</p>
+          <p>Enterprise AI Red Team Platform v2.2.0</p>
           <p>
             Combines{" "}
             {["Promptfoo", "Garak", "PyRIT", "DeepTeam"].map((t, i, arr) => (
