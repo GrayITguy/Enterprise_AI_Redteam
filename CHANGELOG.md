@@ -8,6 +8,9 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ## [Unreleased]
 
+### Added
+- **HTML and CSV report formats.** Alongside PDF and JSON, scans can now be exported as a self-contained styled HTML report (severity cards, OWASP coverage, failed-finding detail — no external assets) and as a spreadsheet-friendly CSV (RFC-4180 quoted, UTF-8 BOM for Excel). The Reports page offers all four formats.
+
 ### Changed
 - **Scan results are paginated and stats are aggregated in SQL.** `GET /api/scans/:id/results` now takes `limit`/`offset` and returns a `{ results, total, limit, offset }` envelope, and the results-summary endpoint aggregates with `COUNT`/`GROUP BY` instead of loading every finding row into memory — so a scan with tens of thousands of findings no longer risks OOMing the API. The Results page drives its charts from the summary endpoint and pages through findings with a "Load more" button. Also fixed a summary bug where passing `info` findings were miscounted as failures.
 - **Scan progress writes are batched.** The scanner flushes the scan row's running counters every 20 findings (and at each tool boundary) instead of once per finding, cutting write contention on the shared SQLite file.
