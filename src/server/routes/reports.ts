@@ -100,14 +100,16 @@ reportsRouter.get(
 
     if (!scan) return res.status(404).json({ error: "Report not found" });
 
-    // Validate report file path is within the expected report directory
+    // Validate the report file path is inside the report directory. Use a
+    // sep-terminated containment check so a sibling like `<dir>-evil` can't pass
+    // a naive prefix match.
     const reportDir = path.resolve(process.env.REPORT_DIR ?? "./data/reports");
     const resolvedPath = path.resolve(report.filePath);
-    if (!resolvedPath.startsWith(reportDir)) {
+    if (resolvedPath !== reportDir && !resolvedPath.startsWith(reportDir + path.sep)) {
       return res.status(403).json({ error: "Invalid report file path" });
     }
 
-    if (!fs.existsSync(report.filePath)) {
+    if (!fs.existsSync(resolvedPath)) {
       return res.status(404).json({ error: "Report file not found on disk" });
     }
 
@@ -118,12 +120,15 @@ reportsRouter.get(
       csv: "text/csv",
     };
 
+    // Build the download filename from the report's own (sanitized) scanId, not
+    // the raw URL param, so it can't inject characters into the header.
+    const safeScanId = report.scanId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 8) || "scan";
     res.setHeader("Content-Type", mimeTypes[report.format] ?? "application/octet-stream");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="eart-report-${req.params.scanId.slice(0, 8)}.${report.format}"`
+      `attachment; filename="eart-report-${safeScanId}.${report.format}"`
     );
 
-    fs.createReadStream(report.filePath).pipe(res);
+    fs.createReadStream(resolvedPath).pipe(res);
   })
 );

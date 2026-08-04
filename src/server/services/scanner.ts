@@ -188,6 +188,22 @@ export class ScanOrchestrator {
         }
       }
 
+      // Flush the scan's running counters/progress to the DB. Batched (see
+      // below) so a large scan doesn't do one full-row UPDATE per finding
+      // against the WAL SQLite file the API also reads.
+      const FLUSH_EVERY = 20;
+      let sinceFlush = 0;
+      const flushProgress = async (): Promise<void> => {
+        sinceFlush = 0;
+        const completedCount = passedTests + failedTests;
+        const effectiveTotal = Math.max(totalExpected, completedCount);
+        const pct = Math.min(Math.round((completedCount / effectiveTotal) * 100), 99);
+        await db
+          .update(scans)
+          .set({ totalTests: effectiveTotal, passedTests, failedTests, progress: pct })
+          .where(eq(scans.id, scanId));
+      };
+
       // Shared result persister — used by all tools
       const persistResult: ResultCallback = async (r) => {
         await db.insert(scanResults).values({
@@ -207,23 +223,7 @@ export class ScanOrchestrator {
         if (r.passed) passedTests++;
         else failedTests++;
 
-        // If Docker workers produce more results than estimated, grow total upward
-        const completedCount = passedTests + failedTests;
-        const effectiveTotal = Math.max(totalExpected, completedCount);
-        const pct = Math.min(
-          Math.round((completedCount / effectiveTotal) * 100),
-          99 // Cap at 99% until scan is fully complete
-        );
-
-        await db
-          .update(scans)
-          .set({
-            totalTests: effectiveTotal,
-            passedTests,
-            failedTests,
-            progress: pct,
-          })
-          .where(eq(scans.id, scanId));
+        if (++sinceFlush >= FLUSH_EVERY) await flushProgress();
       };
 
       try {
@@ -291,6 +291,9 @@ export class ScanOrchestrator {
           }
         }
 
+        // Flush any results buffered since the last batch so the row is current
+        // at each tool boundary.
+        await flushProgress();
         completedTools++;
         onProgress?.(Math.round((completedTools / tools.length) * 100));
       }
