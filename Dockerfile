@@ -40,8 +40,12 @@ RUN npm ci --omit=dev
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:24-alpine AS runtime
 
-# Install docker CLI so Node.js can spawn Python worker containers
-RUN apk add --no-cache docker-cli wget
+# docker CLI so Node.js can spawn Python worker containers (over the socket
+# proxy, not a mounted socket); su-exec to drop privileges in the entrypoint.
+RUN apk add --no-cache docker-cli wget su-exec
+
+# Non-root runtime user.
+RUN addgroup -S eart && adduser -S -G eart -H eart
 
 WORKDIR /app
 
@@ -57,10 +61,17 @@ COPY --from=backend-builder /app/dist ./dist
 # Copy compiled frontend SPA
 COPY --from=frontend-builder /app/site/dist ./site/dist
 
-# Create runtime directories
-RUN mkdir -p /data/reports /app/logs
+# Entrypoint fixes volume ownership then drops to the eart user.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Create runtime directories owned by the runtime user
+RUN mkdir -p /data/reports /app/logs && chown -R eart:eart /data /app/logs
 
 EXPOSE 3000
+
+# The entrypoint drops to the non-root `eart` user before running the CMD.
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Default: run the app server
 # Override with: command: ["node", "dist/server/workers/scanWorker.js"]
