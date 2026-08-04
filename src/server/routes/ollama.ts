@@ -1,7 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import {
-  queueRelayRequest,
   pollNextRequest,
   fulfillRelayRequest,
   rejectRelayRequest,
@@ -73,44 +72,14 @@ ollamaRouter.get("/status", asyncHandler(async (req: Request, res: Response) => 
 
 // ─── Browser Relay Endpoints ──────────────────────────────────────────────────
 //
-// These three endpoints form a relay that lets the browser (on the user's
-// machine) act as a bridge between the backend/scan-worker and a local Ollama
-// instance that the server cannot reach directly.
+// These endpoints form a relay that lets the browser (on the user's machine)
+// act as a bridge between the backend/scan-worker and a local Ollama instance
+// that the server cannot reach directly. Producers (the scan worker and the
+// app's AI services) enqueue directly into the shared Redis queue via
+// queueRelayRequest(), so there is no HTTP "forward" endpoint any more.
 //
-//  POST /api/ollama/relay/forward  — called by scan-worker / backend services;
-//                                    queues the request and awaits a browser response
 //  GET  /api/ollama/relay/poll     — long-polled by the browser; returns the next item
 //  POST /api/ollama/relay/fulfill  — browser posts the Ollama response back here
-
-/**
- * POST /api/ollama/relay/forward
- *
- * Body: { ollamaUrl: string, path: string, body: object }
- * Queues an Ollama API call for the browser relay and waits (up to 120 s) for
- * the browser to fulfill it.  Returns the raw Ollama response JSON.
- */
-ollamaRouter.post("/relay/forward", asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const { ollamaUrl, path, body } = req.body as {
-    ollamaUrl?: string;
-    path?: string;
-    body?: unknown;
-  };
-
-  if (!ollamaUrl || !path) {
-    res.status(400).json({ error: "ollamaUrl and path are required" });
-    return;
-  }
-
-  try {
-    // Scope the queued item to the authenticated user (the scan owner, via an
-    // internal token) so only their browser can receive and fulfill it.
-    const result = await queueRelayRequest(req.user!.id, ollamaUrl, path, body ?? {});
-    res.json(result);
-  } catch (err: unknown) {
-    const message = errorMessage(err);
-    res.status(504).json({ error: message });
-  }
-}));
 
 /**
  * GET /api/ollama/relay/poll
@@ -134,7 +103,7 @@ ollamaRouter.get("/relay/poll", asyncHandler(async (req: AuthenticatedRequest, r
  * Body: { requestId: string, data?: object, error?: string }
  * Called by the browser after it has fetched the Ollama response.
  */
-ollamaRouter.post("/relay/fulfill", (req: AuthenticatedRequest, res: Response) => {
+ollamaRouter.post("/relay/fulfill", asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const { requestId, data, error } = req.body as {
     requestId?: string;
     data?: unknown;
@@ -147,10 +116,10 @@ ollamaRouter.post("/relay/fulfill", (req: AuthenticatedRequest, res: Response) =
   }
 
   if (error) {
-    rejectRelayRequest(requestId, req.user!.id, error);
+    await rejectRelayRequest(requestId, req.user!.id, error);
   } else {
-    fulfillRelayRequest(requestId, req.user!.id, data);
+    await fulfillRelayRequest(requestId, req.user!.id, data);
   }
 
   res.json({ ok: true });
-});
+}));

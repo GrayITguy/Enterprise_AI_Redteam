@@ -1,167 +1,171 @@
 import { v4 as uuid } from "uuid";
+import { Redis as IORedis } from "ioredis";
 import { logger } from "../utils/logger.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/**
+ * Redis-backed Ollama browser relay.
+ *
+ * The relay bridges a producer that needs an Ollama completion (the scan worker
+ * or the app's remediation/narrative service) with the user's browser, which
+ * has access to their local Ollama. Backing it with Redis instead of in-process
+ * maps means:
+ *   - the scan **worker** enqueues directly (no HTTP self-call to the app, no
+ *     minted internal token), and
+ *   - poll/fulfill work across app replicas, since a browser polling replica A
+ *     and a producer waiting on replica B share the same queue.
+ *
+ * Mechanism (Redis lists + blocking pops — naturally race-free):
+ *   - queue per user:      `eart:relay:q:<userId>`      (producer RPUSH, browser BRPOP)
+ *   - response per request:`eart:relay:resp:<requestId>`(browser RPUSH, producer BRPOP)
+ *   - owner per request:   `eart:relay:owner:<requestId>` so only the owning user
+ *     can fulfill/reject a request (cross-user isolation).
+ */
 
-interface RelayItem {
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
+const queueKey = (userId: string) => `eart:relay:q:${userId}`;
+const respKey = (requestId: string) => `eart:relay:resp:${requestId}`;
+const ownerKey = (requestId: string) => `eart:relay:owner:${requestId}`;
+
+export interface RelayItem {
   requestId: string;
   ollamaUrl: string;
   path: string;
   body: unknown;
 }
 
-/** Internal queue entry — carries the owning user so items are never shared. */
-interface QueuedItem extends RelayItem {
-  userId: string;
+/** Shared connection for non-blocking commands (RPUSH/GET/SET/DEL/EXPIRE). */
+let cmd: IORedis | null = null;
+function client(): IORedis {
+  if (!cmd) {
+    cmd = new IORedis(REDIS_URL, { maxRetriesPerRequest: null, lazyConnect: true });
+    cmd.on("error", (err: Error) => logger.error(`[OllamaRelay] Redis error: ${err.message}`));
+  }
+  return cmd;
 }
 
-interface PendingRequest {
-  userId: string;
-  resolve: (data: unknown) => void;
-  reject: (err: Error) => void;
-  timeout: NodeJS.Timeout;
+/** A blocking command (BRPOP) holds its connection for its whole wait, so each
+ *  gets a dedicated short-lived connection that is closed when the wait ends. */
+function blockingClient(): IORedis {
+  const c = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+  c.on("error", (err: Error) => logger.error(`[OllamaRelay] Redis (blocking) error: ${err.message}`));
+  return c;
 }
-
-interface PollWaiter {
-  userId: string;
-  resolve: (item: RelayItem | null) => void;
-  timeout: NodeJS.Timeout;
-}
-
-// ─── State ────────────────────────────────────────────────────────────────────
-
-/** Promises waiting for the browser to return an Ollama response. */
-const pendingRequests = new Map<string, PendingRequest>();
-
-/** Queued items not yet picked up by the browser. */
-const itemQueue: QueuedItem[] = [];
-
-/** Browser long-poll waiters — resolved when an item arrives. */
-const pollWaiters: PollWaiter[] = [];
-
-/** Strip the internal `userId` before an item is handed to a browser. */
-function toRelayItem(q: QueuedItem): RelayItem {
-  return { requestId: q.requestId, ollamaUrl: q.ollamaUrl, path: q.path, body: q.body };
-}
-
-// ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Queue an Ollama request for the owning user's browser to fulfill.
- *
- * Every request is scoped to `userId`: only that user's browser (polling with
- * their own JWT) can receive the item or post a response back for it. This
- * prevents one authenticated user from siphoning another user's scan prompts
- * off the queue or injecting fabricated LLM responses into their results.
+ * Queue an Ollama request for the owning user's browser and wait for the
+ * response. Scoped to `userId`: only that user's browser can receive the item
+ * (it polls its own queue) or post a response back (owner check on fulfill).
+ * Pass `signal` to abort the wait promptly on scan cancellation.
  */
-export function queueRelayRequest(
+export async function queueRelayRequest(
   userId: string,
   ollamaUrl: string,
   path: string,
   body: unknown,
-  timeoutMs = getOllamaTimeoutMs()
+  timeoutMs = getOllamaTimeoutMs(),
+  signal?: AbortSignal
 ): Promise<unknown> {
   const requestId = uuid();
-  const item: QueuedItem = { requestId, userId, ollamaUrl, path, body };
+  const item: RelayItem = { requestId, ollamaUrl, path, body };
+  const ttlSec = Math.ceil(timeoutMs / 1000) + 60;
+  const blockSec = Math.max(1, Math.ceil(timeoutMs / 1000));
 
   logger.debug(`[OllamaRelay] Queuing request ${requestId} (user ${userId}) → ${ollamaUrl}${path}`);
 
-  // Wake a poll waiter belonging to the SAME user, otherwise push to the queue.
-  const waiterIdx = pollWaiters.findIndex((w) => w.userId === userId);
-  if (waiterIdx !== -1) {
-    const [waiter] = pollWaiters.splice(waiterIdx, 1);
-    clearTimeout(waiter!.timeout);
-    waiter!.resolve(toRelayItem(item));
-  } else {
-    itemQueue.push(item);
+  const c = client();
+  await c.set(ownerKey(requestId), userId, "EX", ttlSec);
+  await c.rpush(queueKey(userId), JSON.stringify(item));
+  await c.expire(queueKey(userId), ttlSec);
+
+  // Block on the response list. A dedicated connection is closed on abort so a
+  // cancelled scan doesn't leave the producer waiting up to the full timeout.
+  const bc = blockingClient();
+  const onAbort = () => void bc.disconnect();
+  if (signal) signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const res = await bc.brpop(respKey(requestId), blockSec);
+    if (!res) {
+      const secs = Math.round(timeoutMs / 1000);
+      throw new Error(
+        `Ollama relay timed out after ${secs}s — ensure the EART dashboard is open in ` +
+          "your browser so it can forward requests to your local Ollama. " +
+          "If the model is very slow, try a faster model or reduce the number of findings."
+      );
+    }
+    const payload = JSON.parse(res[1]) as { data?: unknown; error?: string };
+    if (payload.error) throw new Error(payload.error);
+    return payload.data;
+  } finally {
+    if (signal) signal.removeEventListener("abort", onAbort);
+    bc.quit().catch(() => bc.disconnect());
+    c.del(ownerKey(requestId)).catch(() => {});
   }
-
-  return new Promise<unknown>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      if (pendingRequests.delete(requestId)) {
-        const secs = Math.round(timeoutMs / 1000);
-        reject(
-          new Error(
-            `Ollama relay timed out after ${secs}s — ensure the EART dashboard is open in ` +
-              "your browser so it can forward requests to your local Ollama. " +
-              "If the model is very slow, try a faster model or reduce the number of findings."
-          )
-        );
-      }
-    }, timeoutMs);
-
-    pendingRequests.set(requestId, { userId, resolve, reject, timeout });
-  });
 }
 
 /**
- * Long-poll for the given user: returns the next queued item owned by `userId`
- * immediately, or waits up to `timeoutMs` before returning null (idle signal).
+ * Long-poll for the given user: returns the next queued item, or null after
+ * `timeoutMs` (idle). Scoped by userId — a browser only ever sees its own items.
  */
-export function pollNextRequest(userId: string, timeoutMs = 30_000): Promise<RelayItem | null> {
-  const idx = itemQueue.findIndex((i) => i.userId === userId);
-  if (idx !== -1) {
-    const [item] = itemQueue.splice(idx, 1);
-    return Promise.resolve(toRelayItem(item!));
-  }
-
-  return new Promise<RelayItem | null>((resolve) => {
-    const timeout = setTimeout(() => {
-      const wIdx = pollWaiters.findIndex((w) => w.resolve === resolve);
-      if (wIdx !== -1) pollWaiters.splice(wIdx, 1);
-      resolve(null);
-    }, timeoutMs);
-
-    pollWaiters.push({ userId, resolve, timeout });
-  });
-}
-
-/**
- * Look up a pending request, verify it belongs to `userId`, and remove it from
- * the map (clearing its timeout). Returns null — with a warning — when the id is
- * unknown or owned by another user, so a user can only settle their own request.
- */
-function takeOwnedPending(
-  requestId: string,
+export async function pollNextRequest(
   userId: string,
-  op: string
-): PendingRequest | null {
-  const pending = pendingRequests.get(requestId);
-  if (!pending) {
-    logger.warn(`[OllamaRelay] ${op}: unknown requestId ${requestId}`);
-    return null;
+  timeoutMs = 30_000
+): Promise<RelayItem | null> {
+  const blockSec = Math.max(1, Math.ceil(timeoutMs / 1000));
+  const bc = blockingClient();
+  try {
+    const res = await bc.brpop(queueKey(userId), blockSec);
+    if (!res) return null;
+    return JSON.parse(res[1]) as RelayItem;
+  } finally {
+    bc.quit().catch(() => bc.disconnect());
   }
-  if (pending.userId !== userId) {
+}
+
+/** Verify the caller owns the request before it can settle it. */
+async function assertOwner(requestId: string, userId: string, op: string): Promise<boolean> {
+  const owner = await client().get(ownerKey(requestId));
+  if (!owner) {
+    logger.warn(`[OllamaRelay] ${op}: unknown or expired requestId ${requestId}`);
+    return false;
+  }
+  if (owner !== userId) {
     logger.warn(
       `[OllamaRelay] ${op}: user ${userId} attempted to settle request ${requestId} owned by another user — ignored`
     );
-    return null;
+    return false;
   }
-  clearTimeout(pending.timeout);
-  pendingRequests.delete(requestId);
-  return pending;
+  return true;
 }
 
-/**
- * Resolve a pending relay request with the Ollama response data.
- * The `userId` must match the user who queued the request, otherwise the call
- * is ignored — a user can only fulfill their own requests.
- */
-export function fulfillRelayRequest(requestId: string, userId: string, data: unknown): void {
-  const pending = takeOwnedPending(requestId, userId, "fulfillRelayRequest");
-  if (!pending) return;
+/** Deliver the Ollama response for a request (browser → producer). */
+export async function fulfillRelayRequest(
+  requestId: string,
+  userId: string,
+  data: unknown
+): Promise<void> {
+  if (!(await assertOwner(requestId, userId, "fulfillRelayRequest"))) return;
+  const c = client();
+  await c.rpush(respKey(requestId), JSON.stringify({ data }));
+  await c.expire(respKey(requestId), 120);
   logger.debug(`[OllamaRelay] Fulfilled request ${requestId}`);
-  pending.resolve(data);
 }
 
-/**
- * Reject a pending relay request with an error message.
- * Scoped to the owning user, exactly like {@link fulfillRelayRequest}.
- */
-export function rejectRelayRequest(requestId: string, userId: string, error: string): void {
-  const pending = takeOwnedPending(requestId, userId, "rejectRelayRequest");
-  if (!pending) return;
+/** Deliver an error for a request (browser → producer). */
+export async function rejectRelayRequest(
+  requestId: string,
+  userId: string,
+  error: string
+): Promise<void> {
+  if (!(await assertOwner(requestId, userId, "rejectRelayRequest"))) return;
+  const c = client();
+  await c.rpush(respKey(requestId), JSON.stringify({ error }));
+  await c.expire(respKey(requestId), 120);
   logger.warn(`[OllamaRelay] Rejected request ${requestId}: ${error}`);
-  pending.reject(new Error(error));
+}
+
+/** Close the shared command connection (used on graceful shutdown). */
+export async function closeOllamaRelay(): Promise<void> {
+  await cmd?.quit().catch(() => {});
+  cmd = null;
 }

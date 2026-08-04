@@ -9,7 +9,6 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
 import { assertUrlNotBlocked } from "../utils/urlValidation.js";
-import { generateInternalToken } from "../middleware/auth.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 
@@ -573,11 +572,11 @@ export class ScanOrchestrator {
   /**
    * Run all promptfoo plugin attacks for an Ollama target via the browser relay.
    *
-   * Instead of using Promptfoo's built-in ollama provider (which calls the
-   * server's localhost), we POST each prompt to the relay endpoint on the
-   * backend HTTP server.  The browser picks the request up, calls the user's
-   * local Ollama, and posts the response back.  We then evaluate the response
-   * against the plugin's failPattern ourselves.
+   * The worker enqueues each prompt into the shared Redis relay queue (scoped to
+   * the scan owner); the user's browser picks it up, calls their local Ollama,
+   * and posts the response back. We then evaluate the response against the
+   * plugin's failPattern ourselves. Enqueuing directly into Redis means the
+   * worker no longer HTTP-POSTs to its own app process with a minted token.
    */
   private async runOllamaAttacksViaRelay(
     config: {
@@ -593,55 +592,24 @@ export class ScanOrchestrator {
     const ollamaUrl = resolveForHost(resolveOllamaUrl(config.targetUrl));
     const model =
       (config.providerConfig.model as string | undefined) ?? config.model ?? "llama3";
-    const port = process.env.PORT ?? "3000";
-    const appUrl = process.env.EART_APP_URL ?? resolveForHost(`http://localhost:${port}`);
-    const relayForwardUrl = `${appUrl}/api/ollama/relay/forward`;
 
-    // Authenticate the server-to-server forward call as the scan owner so the
-    // relay item is scoped to their browser (never trust a user id in the body).
-    const relayAuthHeader: Record<string, string> = config.ownerUserId
-      ? { Authorization: `Bearer ${generateInternalToken(config.ownerUserId)}` }
-      : {};
+    if (!config.ownerUserId) {
+      throw new Error("Cannot run an Ollama browser-relay scan without a scan owner.");
+    }
+    const ownerUserId = config.ownerUserId;
+    const { queueRelayRequest } = await import("./ollamaRelay.js");
 
     logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
 
-    const RELAY_RETRY_DELAYS = [2_000, 4_000, 8_000];
-
     await this.runAttackLoop(config.plugins, "[Scanner][ollama-relay]", onResult, async (attack) => {
-      // Retry relay calls up to 3 times with exponential back-off
-      let relayResp: Response | undefined;
-      for (let attempt = 0; attempt <= RELAY_RETRY_DELAYS.length; attempt++) {
-        try {
-          relayResp = await fetch(relayForwardUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...relayAuthHeader },
-            body: JSON.stringify({
-              ollamaUrl,
-              path: "/api/chat",
-              body: { model, messages: [{ role: "user", content: attack.prompt }], stream: false },
-            }),
-            signal: AbortSignal.timeout(getOllamaTimeoutMs() + 30_000),
-          });
-          break;
-        } catch (fetchErr) {
-          if (attempt < RELAY_RETRY_DELAYS.length) {
-            const delay = RELAY_RETRY_DELAYS[attempt]!;
-            logger.warn(
-              `[Scanner][ollama-relay] Relay unreachable (attempt ${attempt + 1}), retrying in ${delay}ms…`
-            );
-            await new Promise<void>((r) => setTimeout(r, delay));
-          } else {
-            throw fetchErr;
-          }
-        }
-      }
-
-      if (!relayResp!.ok) {
-        const errBody = await relayResp!.text().catch(() => "");
-        throw new Error(`Relay returned HTTP ${relayResp!.status}: ${errBody}`);
-      }
-
-      const data = (await relayResp!.json()) as { message?: { content?: string } };
+      const data = (await queueRelayRequest(
+        ownerUserId,
+        ollamaUrl,
+        "/api/chat",
+        { model, messages: [{ role: "user", content: attack.prompt }], stream: false },
+        getOllamaTimeoutMs(),
+        signal
+      )) as { message?: { content?: string } };
       return { responseText: data.message?.content ?? "", extraEvidence: { relay: true } };
     }, signal);
   }
