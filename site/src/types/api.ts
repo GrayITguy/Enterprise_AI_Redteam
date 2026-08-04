@@ -218,6 +218,31 @@ export interface PaginatedScanResults {
   offset: number;
 }
 
+export type DiffStatus = "fixed" | "improved" | "unchanged" | "not-retested";
+
+export interface ScanDiffCategory {
+  category: string;
+  name: string;
+  beforeFailed: number;
+  afterFailed: number | null;
+  status: DiffStatus;
+}
+
+/** Before/after retest comparison from `GET /api/scans/:id/diff?original=...`. */
+export interface ScanDiff {
+  originalScanId: string;
+  retestScanId: string;
+  categories: ScanDiffCategory[];
+  summary: {
+    fixed: number;
+    improved: number;
+    unchanged: number;
+    beforeFailed: number;
+    afterFailed: number;
+    retestStatus: ScanStatus;
+  };
+}
+
 // ─── Results / narrative ────────────────────────────────────────────────────
 export interface ResultsSummary {
   total: number;

@@ -9,6 +9,7 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 ## [Unreleased]
 
 ### Added
+- **Remediation before/after comparison.** After running "Verify Fixes", the retest's results page shows a before/after panel comparing the retest against the original scan by OWASP category — how many categories were fixed, improved, or still failing (`GET /api/scans/:id/diff?original=<scanId>`). It updates live while the retest runs.
 - **HTML and CSV report formats.** Alongside PDF and JSON, scans can now be exported as a self-contained styled HTML report (severity cards, OWASP coverage, failed-finding detail — no external assets) and as a spreadsheet-friendly CSV (RFC-4180 quoted, UTF-8 BOM for Excel). The Reports page offers all four formats.
 
 ### Changed

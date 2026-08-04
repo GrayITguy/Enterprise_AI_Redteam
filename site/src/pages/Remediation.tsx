@@ -267,7 +267,10 @@ export default function Remediation() {
       api
         .post(`/remediation/scans/${scanId}/verify`)
         .then((r) => r.data as RemediationVerifyResponse),
-    onSuccess: (data) => navigate(`/scans/${data.id}`),
+    // Send the user to the retest's results with a link back to the original
+    // scan so the before/after comparison renders once the retest completes.
+    onSuccess: (data) =>
+      navigate(`/scans/${data.id}/results?original=${data.originalScanId}`),
   });
 
   return (

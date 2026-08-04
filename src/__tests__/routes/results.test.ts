@@ -89,6 +89,49 @@ describe("Results & pagination", () => {
     });
   });
 
+  describe("GET /api/scans/:id/diff (remediation before/after)", () => {
+    it("requires the 'original' query parameter", async () => {
+      const res = await request(app)
+        .get(`/api/scans/${scanId}/diff`)
+        .set(authHeader(admin.token));
+      expect(res.status).toBe(400);
+    });
+
+    it("compares a retest against the original scan by OWASP category", async () => {
+      // Original: LLM01 fails twice, LLM06 fails once.
+      await insertResult({ owaspCategory: "LLM01", passed: false });
+      await insertResult({ owaspCategory: "LLM01", passed: false });
+      await insertResult({ owaspCategory: "LLM06", passed: false });
+
+      // Retest: LLM01 now passes (fixed), LLM06 still fails (unchanged).
+      const retestId = await seedScan();
+      await insertResult({ scanId: retestId, owaspCategory: "LLM01", passed: true });
+      await insertResult({ scanId: retestId, owaspCategory: "LLM06", passed: false });
+
+      const res = await request(app)
+        .get(`/api/scans/${retestId}/diff`)
+        .query({ original: scanId })
+        .set(authHeader(admin.token));
+
+      expect(res.status).toBe(200);
+      const cats: Array<{ category: string; status: string; beforeFailed: number; afterFailed: number }> =
+        res.body.categories;
+      expect(cats.find((c) => c.category === "LLM01")?.status).toBe("fixed");
+      expect(cats.find((c) => c.category === "LLM06")?.status).toBe("unchanged");
+      expect(res.body.summary.fixed).toBe(1);
+      expect(res.body.summary.unchanged).toBe(1);
+      expect(res.body.summary.beforeFailed).toBe(3);
+    });
+
+    it("404s when a scan is not owned by the caller", async () => {
+      const res = await request(app)
+        .get(`/api/scans/00000000-0000-0000-0000-000000000000/diff`)
+        .query({ original: scanId })
+        .set(authHeader(admin.token));
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe("GET /api/results/scans/:id/summary (SQL aggregation)", () => {
     it("aggregates totals, severity, tool and OWASP breakdowns", async () => {
       await insertResult({ passed: true, severity: "info", tool: "garak", owaspCategory: "LLM01" });
