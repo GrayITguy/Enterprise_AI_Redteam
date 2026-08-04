@@ -35,6 +35,7 @@ vi.mock("ioredis", () => {
       return "OK";
     });
     get = vi.fn(async (k: string) => store.kv[k] ?? null);
+    exists = vi.fn(async (k: string) => (k in store.kv ? 1 : 0));
     del = vi.fn(async (k: string) => {
       delete store.kv[k];
       return 1;
@@ -52,6 +53,7 @@ import {
   pollNextRequest,
   fulfillRelayRequest,
   rejectRelayRequest,
+  isRelayPollerActive,
   closeOllamaRelay,
 } from "../server/services/ollamaRelay.js";
 
@@ -126,6 +128,15 @@ describe("ollamaRelay (Redis-backed)", () => {
 
     await rejectRelayRequest("req-2", "user-a", "real error");
     expect(store.lists["eart:relay:resp:req-2"]![0]).toContain("real error");
+  });
+
+  it("tracks browser-relay poller presence (fast-fail signal)", async () => {
+    expect(await isRelayPollerActive("user-a")).toBe(false);
+    // A browser poll refreshes the presence marker.
+    await pollNextRequest("user-a", 1000);
+    expect(await isRelayPollerActive("user-a")).toBe(true);
+    // A different user is still not present.
+    expect(await isRelayPollerActive("user-b")).toBe(false);
   });
 
   it("ignores settlement of an unknown/expired request", async () => {
