@@ -8,6 +8,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
 import { publishCancel } from "../services/scanControl.js";
+import { onScanProgress } from "../services/scanProgress.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
@@ -363,6 +364,63 @@ scansRouter.get("/:id/diff", asyncHandler(async (req: AuthenticatedRequest, res)
   };
 
   return res.json({ originalScanId: originalId, retestScanId: req.params.id, categories, summary });
+}));
+
+// ─── GET /api/scans/:id/events ────────────────────────────────────────────────
+// Server-Sent Events stream of live progress for a running scan. Emits an
+// initial snapshot, then a `progress` event on each worker update, and closes
+// after a terminal status. The browser reads this with fetch (bearer auth) and
+// falls back to polling if the stream drops.
+scansRouter.get("/:id/events", asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const scan = await db
+    .select({
+      id: scans.id, status: scans.status, progress: scans.progress,
+      totalTests: scans.totalTests, passedTests: scans.passedTests, failedTests: scans.failedTests,
+    })
+    .from(scans)
+    .where(and(eq(scans.id, req.params.id), eq(scans.userId, req.user!.id)))
+    .get();
+  if (!scan) return res.status(404).json({ error: "Scan not found" });
+
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no", // disable proxy buffering (nginx)
+  });
+  res.flushHeaders?.();
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  // Initial snapshot so the client renders immediately.
+  send("progress", scan);
+  const terminal = ["completed", "failed", "cancelled"];
+  if (terminal.includes(scan.status)) {
+    send("done", { status: scan.status });
+    return res.end();
+  }
+
+  // Heartbeat keeps the connection alive through idle periods / proxies.
+  const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+  let unsubscribe = () => {};
+  const cleanup = () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  };
+
+  unsubscribe = onScanProgress(req.params.id, (evt) => {
+    send("progress", evt);
+    if (terminal.includes(evt.status)) {
+      send("done", { status: evt.status });
+      cleanup();
+      res.end();
+    }
+  });
+
+  req.on("close", cleanup);
+  return undefined;
 }));
 
 // ─── POST /api/scans/:id/cancel ───────────────────────────────────────────────
