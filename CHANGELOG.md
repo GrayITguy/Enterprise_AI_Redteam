@@ -9,6 +9,7 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 ## [Unreleased]
 
 ### Changed
+- **Ollama browser relay moved to Redis.** The relay queue and pending responses now live in Redis (blocking-list based) instead of in the app process's memory. The scan worker enqueues relay requests directly rather than HTTP-POSTing to its own app with a minted internal token, and poll/fulfill work across app replicas (a browser polling one replica and a producer waiting on another share the same queue). Per-user scoping and cross-user isolation are preserved via a per-request owner key. Removed the now-unused `/api/ollama/relay/forward` endpoint and the internal-token minter.
 - **Prompt, cross-process scan cancellation.** Cancelling a scan now publishes a Redis pub/sub signal that the worker acts on immediately — aborting the in-flight tool and killing its Docker container mid-run — instead of only being noticed between tools by DB-status polling. The signal fans out to every worker replica, so cancellation works when the app and worker (or multiple workers) run as separate processes. Persisted scan status remains the durable source of truth and the polling fallback still guarantees eventual cancellation if a subscriber is momentarily disconnected.
 
 ---

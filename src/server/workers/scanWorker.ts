@@ -8,6 +8,7 @@ import { scans, projects, users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { sendScanCompleteEmail } from "../services/emailService.js";
 import { subscribeCancel, closeScanControl } from "../services/scanControl.js";
+import { closeOllamaRelay } from "../services/ollamaRelay.js";
 
 const orchestrator = new ScanOrchestrator();
 
@@ -179,6 +180,7 @@ async function shutdown(reason: string): Promise<void> {
   orchestrator.abortAll();
   await worker.close();
   await closeScanControl();
+  await closeOllamaRelay();
   await redisConnection.quit();
   process.exit(0);
 }
