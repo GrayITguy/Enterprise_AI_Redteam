@@ -7,6 +7,7 @@ import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { PLUGINS, PRESETS } from "../config/pluginCatalog.js";
 import { scanQueue } from "../services/queue.js";
+import { publishCancel } from "../services/scanControl.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 
@@ -305,6 +306,10 @@ scansRouter.post("/:id/cancel", asyncHandler(async (req: AuthenticatedRequest, r
     .update(scans)
     .set({ status: "cancelled", completedAt: new Date() })
     .where(eq(scans.id, scan.id));
+
+  // Notify the worker (any replica) to abort a running scan promptly. Best-effort
+  // on top of the durable status write above.
+  await publishCancel(scan.id);
 
   return res.json({ message: "Scan cancelled" });
 }));

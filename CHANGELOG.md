@@ -6,6 +6,13 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Prompt, cross-process scan cancellation.** Cancelling a scan now publishes a Redis pub/sub signal that the worker acts on immediately — aborting the in-flight tool and killing its Docker container mid-run — instead of only being noticed between tools by DB-status polling. The signal fans out to every worker replica, so cancellation works when the app and worker (or multiple workers) run as separate processes. Persisted scan status remains the durable source of truth and the polling fallback still guarantees eventual cancellation if a subscriber is momentarily disconnected.
+
+---
+
 ## [2.2.0] — 2026-08-04
 
 ### Fixed
