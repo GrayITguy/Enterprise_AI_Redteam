@@ -103,14 +103,22 @@ export async function queueRelayRequest(
   }
 }
 
+const pollerKey = (userId: string) => `eart:relay:poller:${userId}`;
+/** TTL a bit longer than the poll window so a continuously-polling browser
+ *  keeps its "present" marker fresh between long-poll cycles. */
+const POLLER_TTL_SEC = 50;
+
 /**
  * Long-poll for the given user: returns the next queued item, or null after
  * `timeoutMs` (idle). Scoped by userId — a browser only ever sees its own items.
+ * Each poll refreshes a short-lived "a browser is relaying for this user" marker
+ * so producers can fail fast instead of blocking when nothing is connected.
  */
 export async function pollNextRequest(
   userId: string,
   timeoutMs = 30_000
 ): Promise<RelayItem | null> {
+  await client().set(pollerKey(userId), "1", "EX", POLLER_TTL_SEC).catch(() => {});
   const blockSec = Math.max(1, Math.ceil(timeoutMs / 1000));
   const bc = blockingClient();
   try {
@@ -119,6 +127,16 @@ export async function pollNextRequest(
     return JSON.parse(res[1]) as RelayItem;
   } finally {
     bc.quit().catch(() => bc.disconnect());
+  }
+}
+
+/** True if a browser has polled the relay for this user recently (i.e. the
+ *  dashboard is open and able to forward requests to their local Ollama). */
+export async function isRelayPollerActive(userId: string): Promise<boolean> {
+  try {
+    return (await client().exists(pollerKey(userId))) === 1;
+  } catch {
+    return false;
   }
 }
 

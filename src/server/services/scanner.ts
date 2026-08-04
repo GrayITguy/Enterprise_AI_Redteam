@@ -615,7 +615,20 @@ export class ScanOrchestrator {
       throw new Error("Cannot run an Ollama browser-relay scan without a scan owner.");
     }
     const ownerUserId = config.ownerUserId;
-    const { queueRelayRequest } = await import("./ollamaRelay.js");
+    const { queueRelayRequest, isRelayPollerActive } = await import("./ollamaRelay.js");
+
+    // Fail fast if no browser is connected to relay requests to this Ollama —
+    // otherwise every prompt would block for the full Ollama timeout waiting for
+    // a browser that isn't there, leaving the scan stuck at "running" for a long
+    // time with no feedback.
+    if (!(await isRelayPollerActive(ownerUserId))) {
+      throw new Error(
+        `Ollama at ${ollamaUrl} is not reachable from the EART server, and no browser is ` +
+          `connected to relay scan prompts to it. Open the EART dashboard in a browser that can ` +
+          `reach this Ollama (it forwards prompts to your local model), or run EART somewhere it ` +
+          `can reach Ollama directly, then re-run the scan.`
+      );
+    }
 
     logger.info(`[Scanner][ollama-relay] Running attacks via browser relay → ${ollamaUrl}`);
 
