@@ -38,7 +38,7 @@ reportsRouter.get("/:scanId", asyncHandler(async (req: AuthenticatedRequest, res
 // ─── POST /api/reports/:scanId/generate ──────────────────────────────────────
 reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRequest, res) => {
   const parsed = z
-    .object({ format: z.enum(["pdf", "json"]).default("pdf") })
+    .object({ format: z.enum(["pdf", "json", "html", "csv"]).default("pdf") })
     .safeParse(req.body);
 
   if (!parsed.success) {
@@ -62,10 +62,13 @@ reportsRouter.post("/:scanId/generate", asyncHandler(async (req: AuthenticatedRe
 
   try {
     const { format } = parsed.data;
-    const reportId =
-      format === "pdf"
-        ? await generator.generatePDF(scan.id)
-        : await generator.generateJSON(scan.id);
+    const generators = {
+      pdf: () => generator.generatePDF(scan.id),
+      json: () => generator.generateJSON(scan.id),
+      html: () => generator.generateHTML(scan.id),
+      csv: () => generator.generateCSV(scan.id),
+    } as const;
+    const reportId = await generators[format]();
 
     return res.status(201).json({ reportId, format });
   } catch (err) {

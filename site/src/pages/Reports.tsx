@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ScanListItem, ReportGenerateResponse } from "@/types/api";
+import type { ScanListItem, ReportGenerateResponse, ReportFormat } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ export default function Reports() {
 
   const [reportError, setReportError] = useState<string | null>(null);
 
-  const generateReport = async (scanId: string, format: "pdf" | "json") => {
+  const generateReport = async (scanId: string, format: ReportFormat) => {
     try {
       setReportError(null);
       const res = await api.post(`/reports/${scanId}/generate`, { format });
@@ -26,8 +27,8 @@ export default function Reports() {
         `/reports/${scanId}/download/${(res.data as ReportGenerateResponse).reportId}`,
         `eart-report-${scanId.slice(0, 8)}.${format}`
       );
-    } catch (err: any) {
-      setReportError(err?.response?.data?.error ?? `Failed to generate ${format.toUpperCase()} report`);
+    } catch (err) {
+      setReportError(apiErrorMessage(err) ?? `Failed to generate ${format.toUpperCase()} report`);
     }
   };
 
@@ -36,7 +37,7 @@ export default function Reports() {
       <div>
         <h1 className="text-2xl font-bold">Reports</h1>
         <p className="text-sm text-muted-foreground">
-          Generate and download PDF security reports for completed scans
+          Generate and download security reports (PDF, HTML, CSV or JSON) for completed scans
         </p>
       </div>
 
@@ -84,20 +85,19 @@ export default function Reports() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => generateReport(scan.id, "json")}
-                  >
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={() => generateReport(scan.id, "html")}>
+                    HTML
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => generateReport(scan.id, "csv")}>
+                    CSV
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => generateReport(scan.id, "json")}>
                     JSON
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => generateReport(scan.id, "pdf")}
-                  >
+                  <Button size="sm" onClick={() => generateReport(scan.id, "pdf")}>
                     <Download className="mr-1.5 h-3.5 w-3.5" />
-                    PDF Report
+                    PDF
                   </Button>
                 </div>
               </CardContent>
