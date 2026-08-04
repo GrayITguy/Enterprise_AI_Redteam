@@ -1,12 +1,15 @@
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { api } from "@/lib/api";
 import type { ScanDetail as ScanDetailData } from "@/types/api";
+import { apiErrorMessage } from "@/types/api";
+import { useScanEvents, type ScanProgressEvent } from "@/hooks/useScanEvents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, XCircle, Clock, AlertTriangle, ChevronRight } from "lucide-react";
+import { ChevronRight, Ban } from "lucide-react";
 
 const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "outline"> = {
   completed: "default",
@@ -18,6 +21,7 @@ const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "
 
 export default function ScanDetail() {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
 
   const { data: scan, isLoading } = useQuery({
     queryKey: ["scan", id],
@@ -28,6 +32,29 @@ export default function ScanDetail() {
         ? 3000
         : false;
     },
+  });
+
+  const isActive = !!scan && ["pending", "running"].includes(scan.status);
+
+  // Live progress over SSE — merges into the cached scan so the UI updates
+  // instantly; polling above remains the fallback if the stream drops.
+  const onProgress = useCallback(
+    (e: ScanProgressEvent) => {
+      queryClient.setQueryData<ScanDetailData>(["scan", id], (prev) =>
+        prev ? { ...prev, status: e.status as ScanDetailData["status"], progress: e.progress,
+          totalTests: e.totalTests, passedTests: e.passedTests, failedTests: e.failedTests } : prev
+      );
+    },
+    [queryClient, id]
+  );
+  const onDone = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["scan", id] });
+  }, [queryClient, id]);
+  useScanEvents(id, isActive, onProgress, onDone);
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.post(`/scans/${id}/cancel`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scan", id] }),
   });
 
   if (isLoading) {
@@ -124,10 +151,29 @@ export default function ScanDetail() {
         </Button>
       )}
 
-      {scan.status === "running" && (
-        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Running security tests — this page updates automatically
+      {isActive && (
+        <div className="flex flex-col items-center gap-3">
+          {scan.status === "running" && (
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              Running security tests — this page updates live
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+          >
+            <Ban className="mr-2 h-4 w-4" />
+            {cancelMutation.isPending ? "Cancelling…" : "Cancel scan"}
+          </Button>
+          {cancelMutation.isError && (
+            <p className="text-xs text-destructive">
+              {apiErrorMessage(cancelMutation.error) ?? "Failed to cancel scan"}
+            </p>
+          )}
         </div>
       )}
     </div>

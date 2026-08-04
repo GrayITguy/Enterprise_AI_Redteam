@@ -11,6 +11,7 @@ import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from ".
 import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
+import { publishProgress } from "./scanProgress.js";
 
 // Our plugin IDs → promptfoo display names
 const PLUGIN_DISPLAY: Record<string, string> = {
@@ -116,6 +117,10 @@ export class ScanOrchestrator {
     const abort = new AbortController();
     this.activeScans.set(scanId, abort);
 
+    // Declared at method scope so the catch block can report final counts.
+    let passedTests = 0;
+    let failedTests = 0;
+
     await db
       .update(scans)
       .set({ status: "running", startedAt: new Date() })
@@ -158,8 +163,6 @@ export class ScanOrchestrator {
       const providerConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
 
       let completedTools = 0;
-      let passedTests = 0;
-      let failedTests = 0;
 
       // Pre-calculate expected test count so the progress bar works correctly
       const totalExpected = estimateTotalTests(pluginIds);
@@ -202,6 +205,14 @@ export class ScanOrchestrator {
           .update(scans)
           .set({ totalTests: effectiveTotal, passedTests, failedTests, progress: pct })
           .where(eq(scans.id, scanId));
+        void publishProgress({
+          scanId,
+          status: "running",
+          progress: pct,
+          totalTests: effectiveTotal,
+          passedTests,
+          failedTests,
+        });
       };
 
       // Shared result persister — used by all tools
@@ -319,6 +330,7 @@ export class ScanOrchestrator {
             failedTests,
           })
           .where(eq(scans.id, scanId));
+        void publishProgress({ scanId, status: "cancelled", progress: 100, totalTests: finalTotal, passedTests, failedTests });
         logger.info(`[Scanner] Scan ${scanId} cancelled — ${finalTotal} partial results kept`);
         return;
       }
@@ -334,6 +346,7 @@ export class ScanOrchestrator {
           progress: 100,
         })
         .where(eq(scans.id, scanId));
+      void publishProgress({ scanId, status: "completed", progress: 100, totalTests: finalTotal, passedTests, failedTests });
 
       logger.info(
         `[Scanner] Scan ${scanId} completed — ${finalTotal} tests, ${failedTests} findings`
@@ -346,6 +359,7 @@ export class ScanOrchestrator {
           .update(scans)
           .set({ status: "cancelled", completedAt: new Date() })
           .where(eq(scans.id, scanId));
+        void publishProgress({ scanId, status: "cancelled", progress: 100, totalTests: passedTests + failedTests, passedTests, failedTests });
         logger.info(`[Scanner] Scan ${scanId} cancelled during execution`);
         return;
       }
@@ -355,6 +369,7 @@ export class ScanOrchestrator {
         .update(scans)
         .set({ status: "failed", errorMessage: message, completedAt: new Date() })
         .where(eq(scans.id, scanId));
+      void publishProgress({ scanId, status: "failed", progress: 100, totalTests: passedTests + failedTests, passedTests, failedTests });
       throw err;
     } finally {
       this.activeScans.delete(scanId);
