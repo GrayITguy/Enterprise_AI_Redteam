@@ -7,8 +7,13 @@ import { db } from "../../db/index.js";
 import { scans, projects, users } from "../../db/schema.js";
 import { eq } from "drizzle-orm";
 import { sendScanCompleteEmail } from "../services/emailService.js";
+import { subscribeCancel, closeScanControl } from "../services/scanControl.js";
 
 const orchestrator = new ScanOrchestrator();
+
+// Abort in-flight scans promptly when a cancel is published (from the app
+// process / any replica), rather than only noticing between tools.
+subscribeCancel((scanId) => orchestrator.cancel(scanId));
 
 /**
  * Recover scans left in "running" by a previous worker crash/restart. A scan is
@@ -173,6 +178,7 @@ async function shutdown(reason: string): Promise<void> {
   logger.info(`[Worker] ${reason} — shutting down gracefully...`);
   orchestrator.abortAll();
   await worker.close();
+  await closeScanControl();
   await redisConnection.quit();
   process.exit(0);
 }

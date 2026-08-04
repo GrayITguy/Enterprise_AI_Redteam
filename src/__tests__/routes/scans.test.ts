@@ -16,6 +16,13 @@ vi.mock("../../server/services/scheduler.js", () => ({
   startScheduler: vi.fn(),
 }));
 
+// Avoid opening a real Redis connection during the cancel-route test.
+vi.mock("../../server/services/scanControl.js", () => ({
+  publishCancel: vi.fn().mockResolvedValue(undefined),
+  subscribeCancel: vi.fn(),
+  closeScanControl: vi.fn().mockResolvedValue(undefined),
+}));
+
 let admin: TestUser;
 let projectId: string;
 

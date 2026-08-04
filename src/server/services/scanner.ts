@@ -78,6 +78,20 @@ export class ScanOrchestrator {
     }
   }
 
+  /**
+   * Cancel a specific scan if it's running in THIS process — aborts its
+   * controller so the current tool's container is killed immediately. A no-op
+   * for scans owned by another replica (they receive the same signal and act on
+   * their own copy). Delivered promptly via the Redis cancel channel.
+   */
+  cancel(scanId: string): void {
+    const controller = this.activeScans.get(scanId);
+    if (controller && !controller.signal.aborted) {
+      logger.info(`[Scanner] Cancel signal received for in-flight scan ${scanId}`);
+      controller.abort();
+    }
+  }
+
   /** Read the current persisted status (used to detect out-of-process cancel). */
   private async isCancelled(scanId: string): Promise<boolean> {
     const row = await db
