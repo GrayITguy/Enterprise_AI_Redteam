@@ -50,18 +50,23 @@ export function resolveOllamaUrl(targetUrl?: string): string {
 const SECRET_CONFIG_KEYS = ["apiKey", "apikey", "api_key", "token", "password"];
 
 /**
- * Redact secret values from a project's providerConfig before sending it to the
- * client. The raw `apiKey` (and similar) is removed and replaced with a boolean
+ * Redact secret values from a provider config before sending it to the client.
+ * The raw `apiKey` (and similar) is removed and replaced with a boolean
  * `hasApiKey` flag, mirroring how SMTP passwords are handled in Settings.
+ *
+ * Pass `{ hint: true }` to additionally expose a masked last-4 `apiKeyHint`
+ * (used by the Settings → AI Remediation form so the admin can recognise which
+ * key is saved without revealing it).
  */
 export function redactProviderConfig(
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  opts: { hint?: boolean } = {}
 ): Record<string, unknown> {
   const redacted: Record<string, unknown> = {};
-  let hasApiKey = false;
+  let secret: string | undefined;
   for (const [key, value] of Object.entries(config)) {
     if (SECRET_CONFIG_KEYS.includes(key)) {
-      if (value) hasApiKey = true;
+      if (value && !secret) secret = String(value);
       continue;
     }
     if (key === "headers" && value && typeof value === "object") {
@@ -76,7 +81,8 @@ export function redactProviderConfig(
     }
     redacted[key] = value;
   }
-  redacted.hasApiKey = hasApiKey;
+  redacted.hasApiKey = !!secret;
+  if (opts.hint && secret) redacted.apiKeyHint = "****" + secret.slice(-4);
   return redacted;
 }
 

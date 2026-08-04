@@ -205,19 +205,21 @@ export class DockerRunner {
         stderrOutput += chunk.toString();
       });
 
+      // Records why the container was force-killed, if it was — mutually
+      // exclusive, so a single value is clearer than two booleans.
+      let killReason: "timeout" | "cancelled" | null = null;
+
       // Timeout: 30 minutes per tool. Kill the container, not just the CLI.
       const timeout = setTimeout(() => {
-        timedOut = true;
+        killReason = "timeout";
         killContainer("timed out after 30 minutes");
       }, 30 * 60 * 1000);
-      let timedOut = false;
 
       // Cancellation via AbortSignal — kill the container immediately.
       const onAbort = (): void => {
-        aborted = true;
+        killReason = "cancelled";
         killContainer("cancelled");
       };
-      let aborted = false;
       if (signal) signal.addEventListener("abort", onAbort, { once: true });
 
       const cleanup = (): void => {
@@ -231,7 +233,7 @@ export class DockerRunner {
         const tail = buffer.trim();
         if (tail) handleRaw(tail);
 
-        if (code !== 0 && !timedOut && !aborted) {
+        if (code !== 0 && !killReason) {
           logger.error(
             `[DockerRunner] ${tool} worker exited with code ${code}. stderr: ${stderrOutput.slice(0, 500)}`
           );
@@ -240,11 +242,8 @@ export class DockerRunner {
         // Wait for all queued persistence to finish before resolving so callers
         // observe a fully-persisted scan.
         persistChain.finally(() => {
-          logger.info(
-            `[DockerRunner] ${tool} worker completed (${results.length} results${
-              timedOut ? ", timed out" : aborted ? ", cancelled" : ""
-            }).`
-          );
+          const suffix = killReason === "timeout" ? ", timed out" : killReason === "cancelled" ? ", cancelled" : "";
+          logger.info(`[DockerRunner] ${tool} worker completed (${results.length} results${suffix}).`);
           resolve(results);
         });
       });

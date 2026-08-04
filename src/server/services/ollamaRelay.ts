@@ -118,24 +118,39 @@ export function pollNextRequest(userId: string, timeoutMs = 30_000): Promise<Rel
 }
 
 /**
+ * Look up a pending request, verify it belongs to `userId`, and remove it from
+ * the map (clearing its timeout). Returns null — with a warning — when the id is
+ * unknown or owned by another user, so a user can only settle their own request.
+ */
+function takeOwnedPending(
+  requestId: string,
+  userId: string,
+  op: string
+): PendingRequest | null {
+  const pending = pendingRequests.get(requestId);
+  if (!pending) {
+    logger.warn(`[OllamaRelay] ${op}: unknown requestId ${requestId}`);
+    return null;
+  }
+  if (pending.userId !== userId) {
+    logger.warn(
+      `[OllamaRelay] ${op}: user ${userId} attempted to settle request ${requestId} owned by another user — ignored`
+    );
+    return null;
+  }
+  clearTimeout(pending.timeout);
+  pendingRequests.delete(requestId);
+  return pending;
+}
+
+/**
  * Resolve a pending relay request with the Ollama response data.
  * The `userId` must match the user who queued the request, otherwise the call
  * is ignored — a user can only fulfill their own requests.
  */
 export function fulfillRelayRequest(requestId: string, userId: string, data: unknown): void {
-  const pending = pendingRequests.get(requestId);
-  if (!pending) {
-    logger.warn(`[OllamaRelay] fulfillRelayRequest: unknown requestId ${requestId}`);
-    return;
-  }
-  if (pending.userId !== userId) {
-    logger.warn(
-      `[OllamaRelay] fulfillRelayRequest: user ${userId} attempted to fulfill request ${requestId} owned by another user — ignored`
-    );
-    return;
-  }
-  clearTimeout(pending.timeout);
-  pendingRequests.delete(requestId);
+  const pending = takeOwnedPending(requestId, userId, "fulfillRelayRequest");
+  if (!pending) return;
   logger.debug(`[OllamaRelay] Fulfilled request ${requestId}`);
   pending.resolve(data);
 }
@@ -145,19 +160,8 @@ export function fulfillRelayRequest(requestId: string, userId: string, data: unk
  * Scoped to the owning user, exactly like {@link fulfillRelayRequest}.
  */
 export function rejectRelayRequest(requestId: string, userId: string, error: string): void {
-  const pending = pendingRequests.get(requestId);
-  if (!pending) {
-    logger.warn(`[OllamaRelay] rejectRelayRequest: unknown requestId ${requestId}`);
-    return;
-  }
-  if (pending.userId !== userId) {
-    logger.warn(
-      `[OllamaRelay] rejectRelayRequest: user ${userId} attempted to reject request ${requestId} owned by another user — ignored`
-    );
-    return;
-  }
-  clearTimeout(pending.timeout);
-  pendingRequests.delete(requestId);
+  const pending = takeOwnedPending(requestId, userId, "rejectRelayRequest");
+  if (!pending) return;
   logger.warn(`[OllamaRelay] Rejected request ${requestId}: ${error}`);
   pending.reject(new Error(error));
 }

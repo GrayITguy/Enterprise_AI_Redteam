@@ -12,7 +12,7 @@ import {
 } from "../services/settingsService.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { logger } from "../utils/logger.js";
-import { errorMessage, safeJsonParse, asyncHandler } from "../utils/helpers.js";
+import { errorMessage, safeJsonParse, asyncHandler, redactProviderConfig } from "../utils/helpers.js";
 import { testProvider } from "../services/aiProvider.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 import { ALLOWED_TARGET_HOSTS } from "../utils/urlValidation.js";
@@ -111,16 +111,12 @@ settingsRouter.get(
   "/remediation",
   asyncHandler(async (_req: AuthenticatedRequest, res) => {
     const s = await getSettings("remediation.");
-    const config = s["remediation.providerConfig"]
+    const rawConfig = s["remediation.providerConfig"]
       ? safeJsonParse<Record<string, unknown>>(s["remediation.providerConfig"], {})
       : {} as Record<string, unknown>;
 
-    // Redact API key in response
-    if (config.apiKey) {
-      config.apiKeyHint = "****" + (config.apiKey as string).slice(-4);
-      config.hasApiKey = true;
-      delete config.apiKey;
-    }
+    // Redact the API key, exposing a masked last-4 hint for the admin form.
+    const config = redactProviderConfig(rawConfig, { hint: true });
 
     res.json({
       enabled: s["remediation.enabled"] !== "false", // default: enabled
