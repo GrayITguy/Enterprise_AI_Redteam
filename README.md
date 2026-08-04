@@ -2,6 +2,9 @@
 
 **Self-hosted AI security testing for teams that can't afford to get it wrong.**
 
+I am not reinventing the wheel with this. I found the top rated AI Red-Team tools and just built an easier way to use them all with one simple set up. 
+Please star and use. Feedback is 100% always welcome and suggestions for improvement. 
+
 EART consolidates four best-in-class open-source red-teaming tools — [Promptfoo](https://github.com/promptfoo/promptfoo), [Garak](https://github.com/leondz/garak), [PyRIT](https://github.com/Azure/PyRIT), and [DeepTeam](https://github.com/confident-ai/deepteam) — into a single dashboard your security team will actually use.
 
 - **Self-hosted** — your data never leaves your infrastructure
