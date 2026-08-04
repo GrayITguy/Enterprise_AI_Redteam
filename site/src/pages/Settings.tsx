@@ -112,6 +112,7 @@ export default function Settings() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      aria-label="Copy invite code"
                       onClick={() => copyCode(inviteResult)}
                     >
                       {copiedCode === inviteResult ? (
@@ -795,6 +796,7 @@ function UserManagement() {
                       size="sm"
                       className="text-destructive hover:text-destructive"
                       disabled={isSelf || deleteMutation.isPending}
+                      aria-label={`Delete ${u.email}`}
                       title={isSelf ? "You cannot delete your own account" : "Delete user"}
                       onClick={() => {
                         if (confirm(`Delete ${u.email}? This removes their projects, scans and reports.`)) {
