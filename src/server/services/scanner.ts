@@ -88,6 +88,15 @@ export class ScanOrchestrator {
     return row?.status === "cancelled";
   }
 
+  /**
+   * True if the scan should stop — either aborted in this process (cheap sync
+   * signal check) or cancelled out-of-process (falls back to a DB read only
+   * when the signal hasn't already fired).
+   */
+  private async isStopRequested(scanId: string, abort: AbortController): Promise<boolean> {
+    return abort.signal.aborted || (await this.isCancelled(scanId));
+  }
+
   async run(scanId: string, onProgress?: (progress: number) => void): Promise<void> {
     logger.info(`[Scanner] Starting scan ${scanId}`);
 
@@ -208,7 +217,7 @@ export class ScanOrchestrator {
       for (const tool of tools) {
         // Stop between tools if the scan was cancelled (out-of-process cancel
         // flips the DB status; abort kills any container mid-tool).
-        if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+        if (await this.isStopRequested(scanId, abort)) {
           abort.abort();
           logger.info(`[Scanner] Scan ${scanId} cancelled — stopping before ${tool}`);
           break;
@@ -283,7 +292,7 @@ export class ScanOrchestrator {
 
       // If the scan was cancelled (in- or out-of-process), record the partial
       // results but do NOT overwrite the status back to "completed".
-      if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+      if (await this.isStopRequested(scanId, abort)) {
         await db
           .update(scans)
           .set({
@@ -316,7 +325,7 @@ export class ScanOrchestrator {
     } catch (err) {
       // A cancellation can surface as a thrown error (e.g. an aborted fetch);
       // don't mislabel it as "failed".
-      if (abort.signal.aborted || (await this.isCancelled(scanId))) {
+      if (await this.isStopRequested(scanId, abort)) {
         await db
           .update(scans)
           .set({ status: "cancelled", completedAt: new Date() })

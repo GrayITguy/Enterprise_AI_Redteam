@@ -23,11 +23,14 @@ async function recoverStaleScans(): Promise<void> {
       .where(eq(scans.status, "running"))
       .all();
 
-    for (const { id } of running) {
-      const job = await scanQueue.getJob(id).catch(() => null);
-      const state = job ? await job.getState().catch(() => null) : null;
-      const stillLive = state === "active" || state === "waiting" || state === "delayed";
-      if (!stillLive) {
+    // The per-scan job lookups are independent Redis round-trips — run them
+    // concurrently rather than serially.
+    await Promise.all(
+      running.map(async ({ id }) => {
+        const job = await scanQueue.getJob(id).catch(() => null);
+        const state = job ? await job.getState().catch(() => null) : null;
+        const stillLive = state === "active" || state === "waiting" || state === "delayed";
+        if (stillLive) return;
         await db
           .update(scans)
           .set({
@@ -37,8 +40,8 @@ async function recoverStaleScans(): Promise<void> {
           })
           .where(eq(scans.id, id));
         logger.warn(`[Worker] Recovered stale running scan ${id} → failed`);
-      }
-    }
+      })
+    );
   } catch (err) {
     logger.error(`[Worker] Stale-scan recovery error: ${err}`);
   }
