@@ -1,0 +1,67 @@
+name: Worker Images
+
+# The garak/pyrit/deepteam images carry heavy toolchains (Rust + ML stacks) and
+# take many minutes to build, so they are NOT built on every push. This workflow
+# builds them only when a worker's files change, on a weekly schedule (to catch
+# upstream dependency breakage), or on manual dispatch. It is a separate,
+# non-required check so it never blocks unrelated PRs.
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "python-workers/**"
+      - ".github/workflows/worker-images.yml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "python-workers/**"
+      - ".github/workflows/worker-images.yml"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.worker }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [garak, pyrit, deepteam]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.worker }} worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: python-workers/${{ matrix.worker }}
+          push: false
+          load: true
+          tags: eart-${{ matrix.worker }}:ci
+          cache-from: type=gha,scope=${{ matrix.worker }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.worker }}
+
+      - name: Smoke-check the image starts and speaks the JSONL protocol
+        run: |
+          # Feed an empty plugin set; the worker must emit valid JSON (or a
+          # structured error) and exit without crashing.
+          echo '{"target_url":"http://127.0.0.1:1","provider_type":"custom","plugins":[]}' \
+            | docker run --rm -i eart-${{ matrix.worker }}:ci > out.txt 2> err.txt || true
+          echo "── stdout ──"; cat out.txt
+          echo "── stderr (tail) ──"; tail -5 err.txt || true
+          # Every non-empty stdout line must be valid JSON.
+          if [ -s out.txt ]; then
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              echo "$line" | python3 -c "import sys,json; json.loads(sys.stdin.read())" \
+                || (echo "::error::Non-JSON stdout line from ${{ matrix.worker }}: $line" && exit 1)
+            done < out.txt
+          fi
+          echo "${{ matrix.worker }} image built and protocol-checked ✓"

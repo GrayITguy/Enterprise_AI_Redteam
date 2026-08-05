@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "smoke:live": "node scripts/live-smoke.mjs",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
