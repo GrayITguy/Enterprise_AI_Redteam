@@ -9,7 +9,6 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 ## [Unreleased]
 
 ### Fixed
-- **Browser Ollama relay was non-functional (401 loop).** The relay hook's poll/fulfill fetches sent no `Authorization` header, but those routes require auth — so every poll got 401 and the relay never bridged any request. It now attaches the JWT, so remotely-hosted EART can actually reach a user's local Ollama through their browser (and the new no-browser fast-fail only triggers when a browser genuinely isn't connected).
 - **Ollama scans no longer hang when no browser relay is connected.** When the EART server can't reach an Ollama target directly, promptfoo attacks fall back to the browser relay. If no dashboard was connected to forward them, every prompt blocked for the full Ollama timeout (up to 15 min each), leaving the scan stuck at "running" with no feedback. The relay now tracks whether a browser is actively polling and fails the scan fast (in seconds) with an actionable message — "Ollama is not reachable from the server, and no browser is connected to relay prompts to it; open the dashboard in a browser that can reach it, or run EART where it can reach Ollama directly."
 
 ### Added
