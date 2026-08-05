@@ -1,2 +1,5 @@
-pyrit>=0.11.0,<1.0.0
+# PyRIT 0.14–0.15: the runner uses PromptChatTarget, which is deprecated and
+# removed in 0.16 — pin below it until the runner is migrated to the new
+# TargetConfiguration API.
+pyrit>=0.14.0,<0.16.0
 requests>=2.31.0,<3.0.0

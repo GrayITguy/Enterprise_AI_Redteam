@@ -18,6 +18,11 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 
 WORKDIR /app
 
+# Keep PyRIT / HuggingFace telemetry off so the worker never phones home from
+# inside a customer's network (the runner also sets these defensively).
+ENV PYRIT_DISABLE_TELEMETRY=1 \
+    HF_HUB_DISABLE_TELEMETRY=1
+
 COPY requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt

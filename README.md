@@ -145,10 +145,10 @@ Being precise about what runs under the hood today:
 |--------|--------|
 | **Garak** | **Runs the real [garak](https://github.com/NVIDIA/garak) tool** — the worker drives garak's probes against your target via its REST generator and reports garak's own detector verdicts. |
 | **DeepTeam** | **Runs the real [deepteam](https://github.com/confident-ai/deepteam) framework** when an independent evaluator LLM is configured — deepteam's Vulnerability classes and attack enhancements (PromptInjection, Roleplay, …) are driven against the target, with an LLM simulator generating attacks and an LLM evaluator judging responses; deepteam's own metric verdicts are reported. Falls back to EART's labelled heuristic probes when no evaluator LLM is available. |
+| **PyRIT** | **Runs Microsoft's real [PyRIT](https://github.com/Azure/PyRIT) toolkit** when an independent evaluator LLM is configured — each plugin maps to a real PyRIT attack strategy (PromptSendingAttack, SkeletonKeyAttack, ManyShotJailbreakAttack, FlipAttack, CrescendoAttack, TAPAttack, PAIRAttack) driven against the target, with a real Scorer (run by the evaluator LLM) deciding whether the objective was achieved; PyRIT's own AttackOutcome is reported. Falls back to EART's labelled heuristic probes when no evaluator LLM is available. |
 | **Promptfoo** | Cloud providers (OpenAI/Anthropic/Azure) run promptfoo's real `evaluate` harness; the Ollama/custom paths deliberately use EART's own attack library (`PLUGIN_ATTACKS`) because promptfoo's HTTP provider is unreliable on non-standard response shapes. Grading is regex + the [AI judge](#grading-regex--optional-ai-judge). |
-| **PyRIT** | Runs EART's own built-in probes modelled on PyRIT, not the upstream engine. Real-engine integration is in progress. |
 
-> **Honesty note:** **Garak** and **DeepTeam** invoke real external engines (DeepTeam needs an evaluator LLM — see below). **Promptfoo** uses its real harness for cloud providers and EART's attacks elsewhere. **PyRIT** still uses EART's own probes. Making PyRIT real is the remaining engine work — see the roadmap.
+> **Honesty note:** **Garak**, **DeepTeam**, and **PyRIT** invoke real external engines (DeepTeam and PyRIT need an evaluator LLM — see below). **Promptfoo** uses its real harness for cloud providers and EART's own attacks (with the AI judge) elsewhere. All four are either real engines or honestly labelled.
 
 #### Grading: regex + optional AI judge
 
@@ -166,9 +166,10 @@ marker is always honoured — and it never uses the target model to grade itself
 With no judge configured, grading falls back to regex-only. Disable the judge
 with `SCAN_JUDGE=off`.
 
-The **same independent provider** powers DeepTeam's real engine: it is the LLM
-that simulates deepteam's adversarial attacks and evaluates the responses. With
-no provider configured, DeepTeam falls back to EART's labelled heuristic probes.
+The **same independent provider** powers DeepTeam's and PyRIT's real engines: it
+is the LLM that simulates/orchestrates the adversarial attacks and scores the
+responses. With no provider configured, both fall back to EART's labelled
+heuristic probes.
 
 ### Python Worker Protocol
 
