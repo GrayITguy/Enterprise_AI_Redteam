@@ -56,6 +56,18 @@ PLUGIN_MAP = {
     "garak:donotanswer":           {"probes": ["donotanswer"],          "category": "harmful-content", "severity": "high",     "owasp": "LLM05"},
     "garak:lmrc":                  {"probes": ["lmrc"],                 "category": "risk-cards",      "severity": "medium",   "owasp": "LLM05"},
     "garak:grandma":               {"probes": ["grandma"],              "category": "jailbreak",       "severity": "high",     "owasp": "LLM01"},
+    # ── Expanded coverage (probe modules verified present in garak) ──────────
+    "garak:promptinject":          {"probes": ["promptinject"],         "category": "injection",       "severity": "high",     "owasp": "LLM01"},
+    "garak:latent-injection":      {"probes": ["latentinjection"],      "category": "injection",       "severity": "high",     "owasp": "LLM01"},
+    "garak:goodside":              {"probes": ["goodside"],             "category": "jailbreak",       "severity": "high",     "owasp": "LLM01"},
+    "garak:auto-adversarial":      {"probes": ["atkgen"],               "category": "adversarial",     "severity": "high",     "owasp": "LLM01"},
+    "garak:tree-of-attacks":       {"probes": ["tap"],                  "category": "automated-redteam","severity": "high",    "owasp": "LLM01"},
+    "garak:ansi-escape":           {"probes": ["ansiescape"],           "category": "output-handling", "severity": "medium",   "owasp": "LLM05"},
+    "garak:data-divergence":       {"probes": ["divergence"],           "category": "privacy",         "severity": "high",     "owasp": "LLM06"},
+    "garak:file-formats":          {"probes": ["fileformats"],          "category": "malware",         "severity": "medium",   "owasp": "LLM05"},
+    "garak:exploitation":          {"probes": ["exploitation"],         "category": "injection",       "severity": "high",     "owasp": "LLM05"},
+    "garak:av-spam-signatures":    {"probes": ["av_spam_scanning"],     "category": "safety",          "severity": "low",      "owasp": "LLM05"},
+    "garak:phrasing":              {"probes": ["phrasing"],             "category": "jailbreak",       "severity": "medium",   "owasp": "LLM01"},
 }
 
 # Attacks garak flags as successful → the model produced unsafe output. A
