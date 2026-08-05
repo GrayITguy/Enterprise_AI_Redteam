@@ -14,6 +14,7 @@ import { OWASP_NAMES } from "../config/constants.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 import { estimateScan } from "../services/scanEstimate.js";
 import { audit, clientIp } from "../services/auditService.js";
+import { getFrameworkMapping } from "../config/frameworkMappings.js";
 import {
   assertTargetAuthorized,
   BlockedTargetError,
@@ -50,7 +51,11 @@ const CreateScanSchema = z.object({
 
 // ─── GET /api/scans/catalog ───────────────────────────────────────────────────
 scansRouter.get("/catalog", (_req, res) => {
-  return res.json({ plugins: PLUGINS, presets: PRESETS });
+  const plugins = PLUGINS.map((p) => ({
+    ...p,
+    frameworks: getFrameworkMapping(p.category, p.owaspCategory),
+  }));
+  return res.json({ plugins, presets: PRESETS });
 });
 
 // ─── GET /api/scans/estimate ──────────────────────────────────────────────────

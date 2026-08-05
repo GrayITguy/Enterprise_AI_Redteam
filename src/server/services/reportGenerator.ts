@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { logger } from "../utils/logger.js";
 import { OWASP_NAMES } from "../config/constants.js";
 import { safeJsonParse } from "../utils/helpers.js";
+import { getFrameworkMapping, frameworkCoverage } from "../config/frameworkMappings.js";
 
 const SEVERITY_COLORS = {
   critical: [220, 38, 38],
@@ -367,13 +368,19 @@ export class ReportGenerator {
       scan: {
         ...scan,
         plugins: safeJsonParse(scan.plugins, []),
+        runMetadata: scan.runMetadata ? safeJsonParse(scan.runMetadata, null) : null,
       },
-      results: results.map((r) => ({ ...r, evidence: safeJsonParse(r.evidence, {}) })),
+      results: results.map((r) => ({
+        ...r,
+        evidence: safeJsonParse(r.evidence, {}),
+        frameworks: getFrameworkMapping(r.category, r.owaspCategory ?? undefined),
+      })),
       summary: {
         total: results.length,
         passed: results.reduce((n, r) => n + (r.passed ? 1 : 0), 0),
         failed: results.reduce((n, r) => n + (r.passed ? 0 : 1), 0),
       },
+      frameworkCoverage: frameworkCoverage(results),
       generatedAt: new Date().toISOString(),
     };
 
