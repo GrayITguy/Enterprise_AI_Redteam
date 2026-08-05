@@ -108,6 +108,29 @@ jobs:
             docker build --check "python-workers/$tool" || echo "::warning::Dockerfile check reported issues for $tool"
           done
 
+  # ─── Live-model smoke (real target + judge) ────────────────────────────────
+  # Validates the real target-call + AI-judge path against live models. It
+  # SKIPS cleanly (exit 0) unless the ANTHROPIC_API_KEY secret and the
+  # LIVE_SMOKE_TARGET_* variables are configured, so it is safe to run always
+  # and only exercises real models where a maintainer opts in with secrets.
+  live-smoke:
+    name: Live-Model Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Run live-model smoke (skips without secrets)
+        run: node scripts/live-smoke.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.LIVE_SMOKE_JUDGE_MODEL }}
+          LIVE_SMOKE_TARGET_URL: ${{ vars.LIVE_SMOKE_TARGET_URL }}
+          LIVE_SMOKE_TARGET_TYPE: ${{ vars.LIVE_SMOKE_TARGET_TYPE }}
+          LIVE_SMOKE_TARGET_MODEL: ${{ vars.LIVE_SMOKE_TARGET_MODEL }}
+          LIVE_SMOKE_TARGET_KEY: ${{ secrets.LIVE_SMOKE_TARGET_KEY }}
+
   # ─── Build verification ────────────────────────────────────────────────────
   build:
     name: Build
