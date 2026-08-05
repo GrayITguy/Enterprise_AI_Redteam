@@ -18,6 +18,13 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 
 WORKDIR /app
 
+# Opt out of deepeval/deepteam telemetry & update checks so the worker never
+# phones home from inside a customer's network. The runner also sets these
+# defensively at runtime; declaring them here covers any deepteam CLI usage too.
+ENV DEEPEVAL_TELEMETRY_OPT_OUT=YES \
+    DEEPEVAL_UPDATE_WARNING_OPT_OUT=YES \
+    ERROR_REPORTING=NO
+
 COPY requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
