@@ -22,11 +22,13 @@ export interface DockerRunConfig {
   plugins: string[];
   tool: string;
   gatewayPort?: number;
+  /** Independent evaluator LLM for workers that need one (e.g. deepteam). */
+  evalProvider?: { type: string; endpoint: string; apiKey: string; model: string };
 }
 
 /** Convert camelCase config keys to snake_case for Python workers. */
 function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
-  const { gatewayPort, ...rest } = config;
+  const { gatewayPort, evalProvider, ...rest } = config;
   let targetUrl = rest.targetUrl;
 
   // When a gateway port is provided, rewrite localhost URLs so the Docker
@@ -37,7 +39,7 @@ function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
     logger.info(`[DockerRunner] Rewrote target URL → ${targetUrl}`);
   }
 
-  return {
+  const snake: Record<string, unknown> = {
     target_url: targetUrl,
     model: rest.model,
     provider_type: rest.providerType,
@@ -45,6 +47,24 @@ function toSnakeConfig(config: DockerRunConfig): Record<string, unknown> {
     plugins: rest.plugins,
     tool: rest.tool,
   };
+
+  // Pass the evaluator provider through (deepteam). Rewrite a localhost eval
+  // endpoint so the container reaches the host LLM via host.docker.internal.
+  if (evalProvider) {
+    let endpoint = evalProvider.endpoint;
+    if (endpoint && isLocalhostUrl(endpoint)) {
+      const parsed = new URL(endpoint);
+      endpoint = `http://host.docker.internal:${parsed.port || 80}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+    }
+    snake.eval_provider = {
+      type: evalProvider.type,
+      endpoint,
+      api_key: evalProvider.apiKey,
+      model: evalProvider.model,
+    };
+  }
+
+  return snake;
 }
 
 /**

@@ -11,6 +11,7 @@ import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from ".
 import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
+import { resolveEvalProviderDescriptor } from "./aiProvider.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 import { publishProgress } from "./scanProgress.js";
 
@@ -251,6 +252,11 @@ export class ScanOrchestrator {
         const toolPlugins = byTool[tool];
         logger.info(`[Scanner] Running ${tool} with ${toolPlugins.length} plugins`);
 
+        // deepteam's real engine needs an independent evaluator LLM (never the
+        // target). Resolve it once here; null → the worker uses its heuristics.
+        const evalProvider =
+          tool === "deepteam" ? (await resolveEvalProviderDescriptor()) ?? undefined : undefined;
+
         const config = {
           targetUrl: project.targetUrl,
           model: (providerConfig.model as string) || "default",
@@ -260,6 +266,7 @@ export class ScanOrchestrator {
           tool,
           ownerUserId: scan.userId,
           ...(gatewayPort != null ? { gatewayPort } : {}),
+          ...(evalProvider ? { evalProvider } : {}),
         };
 
         if (tool === "promptfoo") {

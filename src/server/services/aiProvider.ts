@@ -400,6 +400,45 @@ export async function isJudgeAvailable(): Promise<boolean> {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+/** A serialisable evaluator-provider descriptor handed to a Python worker. */
+export interface EvalProviderDescriptor {
+  type: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+}
+
+/**
+ * Resolve an independent evaluator-provider descriptor for a Python worker
+ * (e.g. deepteam's simulator/evaluator LLM). Same independence rule as the
+ * judge — the admin AI provider or ANTHROPIC_API_KEY, never the project/target.
+ * Returns `null` when none is configured so the worker can fall back to its
+ * built-in heuristics.
+ */
+export async function resolveEvalProviderDescriptor(): Promise<EvalProviderDescriptor | null> {
+  const remProviderType = await getSetting("remediation.providerType");
+  if (remProviderType && remProviderType !== "project") {
+    const raw = await getSetting("remediation.providerConfig");
+    const cfg: Record<string, unknown> = raw ? safeJsonParse<Record<string, unknown>>(raw, {}) : {};
+    return {
+      type: remProviderType,
+      endpoint: (cfg.endpoint as string) ?? "",
+      apiKey: (cfg.apiKey as string) ?? "",
+      model: (cfg.model as string) ?? "",
+    };
+  }
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (key) {
+    return {
+      type: "anthropic",
+      endpoint: "",
+      apiKey: key,
+      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
+    };
+  }
+  return null;
+}
+
 /**
  * Test a provider configuration with a minimal prompt.
  * Throws on failure with a descriptive error message.
