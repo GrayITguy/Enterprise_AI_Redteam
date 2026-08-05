@@ -330,6 +330,77 @@ async function callProvider(
 }
 
 /**
+ * Resolve a *trusted* judge/grader provider — deliberately independent of the
+ * project under test so the target model is never asked to grade itself.
+ *
+ * Resolution order:
+ *   1. Admin-configured AI provider (Settings → AI Remediation), unless it is
+ *      set to "project" (which would point back at the target).
+ *   2. ANTHROPIC_API_KEY env var.
+ *
+ * Returns `null` when no independent provider is configured — callers then fall
+ * back to regex-only grading rather than failing the scan.
+ */
+export async function callJudge(prompt: string, maxTokens = 512): Promise<string | null> {
+  // 1. Admin-configured remediation provider (if not delegating to the project).
+  const remProviderType = await getSetting("remediation.providerType");
+  if (remProviderType && remProviderType !== "project") {
+    const remConfigRaw = await getSetting("remediation.providerConfig");
+    const remConfig: Record<string, unknown> = remConfigRaw
+      ? safeJsonParse<Record<string, unknown>>(remConfigRaw, {})
+      : {};
+    try {
+      const model = (remConfig.model as string) || "";
+      const ctx = getContextWindowWithDefault(model, remProviderType);
+      return await callProvider(
+        prompt,
+        remProviderType,
+        (remConfig.endpoint as string) ?? "",
+        remConfig,
+        model,
+        maxTokens,
+        ctx
+      );
+    } catch (err) {
+      logger.warn(`[Judge] Admin provider failed, trying Anthropic env: ${errorMessage(err)}`);
+    }
+  }
+
+  // 2. ANTHROPIC_API_KEY cloud fallback.
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    try {
+      const Anthropic = await loadAnthropicSdk();
+      const client = new Anthropic({ apiKey: anthropicKey });
+      const message = await client.messages.create({
+        model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5-20251001",
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const block = message.content[0];
+      if (block?.type === "text") return block.text;
+    } catch (err) {
+      logger.warn(`[Judge] Anthropic env provider failed: ${errorMessage(err)}`);
+    }
+  }
+
+  // No independent judge available.
+  return null;
+}
+
+/**
+ * Whether an independent judge provider is configured. Cheap to call — reads
+ * settings and the env var but makes no network request. Used to short-circuit
+ * the judge path so scans don't pay a resolution cost per attack when no judge
+ * exists.
+ */
+export async function isJudgeAvailable(): Promise<boolean> {
+  const remProviderType = await getSetting("remediation.providerType");
+  if (remProviderType && remProviderType !== "project") return true;
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
+/**
  * Test a provider configuration with a minimal prompt.
  * Throws on failure with a descriptive error message.
  */

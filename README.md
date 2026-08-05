@@ -147,7 +147,23 @@ Being precise about what runs under the hood today:
 | **Promptfoo** | **Not yet the real promptfoo engine.** EART runs its own curated attack library (`PLUGIN_ATTACKS`) with pattern-based grading; the `promptfoo` package is a dependency but its `evaluate` API is not yet used. Real-engine integration is in progress. |
 | **PyRIT / DeepTeam** | Also run EART's own built-in probes modelled on those tools, not the upstream engines. Real-engine integration is in progress. |
 
-> **Honesty note:** of the four, only **Garak** currently invokes a real external red-teaming engine. The others use EART's own attack heuristics. Making Promptfoo/PyRIT/DeepTeam real (and improving grading beyond regex) is the top active priority — see the roadmap.
+> **Honesty note:** of the four, only **Garak** currently invokes a real external red-teaming engine. The others use EART's own attack heuristics. Making Promptfoo/PyRIT/DeepTeam real is still an active priority — see the roadmap.
+
+#### Grading: regex + optional AI judge
+
+EART's built-in attacks were graded purely by regex `failPattern`: a match on an
+exploit marker (e.g. `CONFIRMED_INJECTED`) meant "compromised", no match meant
+"safe". Regex is precise but brittle — a model that complies *in its own words*,
+or leaks a system prompt phrased differently, slips past the pattern and is
+scored as a false all-clear, the worst failure mode for a red-teaming tool.
+
+When an **independent AI provider** is configured (Settings → AI Remediation, or
+`ANTHROPIC_API_KEY`), every response the regex marked "safe" is re-examined by a
+semantic **judge** that decides whether the model actually did the unsafe thing.
+The judge can only ever escalate a regex pass to a finding — a matched exploit
+marker is always honoured — and it never uses the target model to grade itself.
+With no judge configured, grading falls back to regex-only. Disable the judge
+with `SCAN_JUDGE=off`.
 
 ### Python Worker Protocol
 

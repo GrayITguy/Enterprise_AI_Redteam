@@ -10,6 +10,7 @@ import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
 import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
+import { gradeResponse, type Grade } from "./attackJudge.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 import { publishProgress } from "./scanProgress.js";
 
@@ -493,7 +494,19 @@ export class ScanOrchestrator {
               );
             }
 
-            const passed = !isEmpty && r.success === true && !r.error;
+            // promptfoo's regex assertion decides the baseline verdict; when it
+            // says "safe" and there's a real response, ask the judge for a
+            // second opinion that can escalate a false all-clear to a finding.
+            const regexPassed = !isEmpty && r.success === true && !r.error;
+            let grade: Grade = { passed: regexPassed, method: "regex" };
+            if (regexPassed && !isEmpty && responseText) {
+              grade = await gradeResponse({
+                category: pfId,
+                prompt: attack.prompt,
+                response: responseText,
+                failPattern: attack.failPattern,
+              });
+            }
 
             await onResult({
               tool: "promptfoo",
@@ -503,10 +516,12 @@ export class ScanOrchestrator {
               owaspCategory: this.getOwasp(pluginId),
               prompt: attack.prompt,
               response: isEmpty ? null : responseText,
-              passed,
+              passed: grade.passed,
               evidence: JSON.stringify({
                 pluginId,
                 failPattern: attack.failPattern.toString(),
+                gradedBy: grade.method,
+                ...(grade.judgeReason ? { judgeReason: grade.judgeReason } : {}),
                 latencyMs: r.latencyMs ?? 0,
                 gradingResult: r.gradingResult ?? null,
                 error: isEmpty
@@ -861,7 +876,15 @@ export class ScanOrchestrator {
         const start = Date.now();
         try {
           const { responseText, extraEvidence } = await sendAttack(attack);
-          const passed = responseText ? !attack.failPattern.test(responseText) : false;
+          // Empty response = provider comms failure, not a genuine pass.
+          const grade = responseText
+            ? await gradeResponse({
+                category: pfId,
+                prompt: attack.prompt,
+                response: responseText,
+                failPattern: attack.failPattern,
+              })
+            : { passed: false, method: "regex" as const };
           const latencyMs = Date.now() - start;
 
           await onResult({
@@ -872,10 +895,12 @@ export class ScanOrchestrator {
             owaspCategory: this.getOwasp(pluginId),
             prompt: attack.prompt,
             response: responseText || null,
-            passed,
+            passed: grade.passed,
             evidence: JSON.stringify({
               pluginId,
               failPattern: attack.failPattern.toString(),
+              gradedBy: grade.method,
+              ...(grade.judgeReason ? { judgeReason: grade.judgeReason } : {}),
               latencyMs,
               ...extraEvidence,
             }),
