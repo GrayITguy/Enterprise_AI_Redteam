@@ -13,6 +13,7 @@ import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 import { estimateScan } from "../services/scanEstimate.js";
+import { audit, clientIp } from "../services/auditService.js";
 import {
   assertTargetAuthorized,
   BlockedTargetError,
@@ -266,6 +267,16 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
     await scanQueue.add("run-scan", { scanId: newScan.id }, { jobId: newScan.id });
   }
 
+  void audit({
+    action: "scan.create",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "scan",
+    targetId: newScan.id,
+    detail: { projectId, preset: preset ?? null, pluginCount: pluginIds.length, estimatedTargetCalls: estimate.targetCalls, scheduled: Boolean(scheduledAt) },
+    ip: clientIp(req),
+  });
+
   return res.status(201).json({
     ...newScan,
     plugins: pluginIds,
@@ -511,6 +522,15 @@ scansRouter.post("/:id/cancel", asyncHandler(async (req: AuthenticatedRequest, r
   // Notify the worker (any replica) to abort a running scan promptly. Best-effort
   // on top of the durable status write above.
   await publishCancel(scan.id);
+
+  void audit({
+    action: "scan.cancel",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "scan",
+    targetId: scan.id,
+    ip: clientIp(req),
+  });
 
   return res.json({ message: "Scan cancelled" });
 }));

@@ -7,6 +7,7 @@ import { users, inviteCodes } from "../../db/schema.js";
 import { eq, and, isNull, gt } from "drizzle-orm";
 import { generateToken, requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
+import { audit, clientIp } from "../services/auditService.js";
 
 export const authRouter = Router();
 authRouter.use(authLimiter);
@@ -160,6 +161,7 @@ authRouter.post("/login", async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
+      void audit({ action: "auth.login_failed", userEmail: email, ip: clientIp(req) });
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -170,6 +172,15 @@ authRouter.post("/login", async (req, res) => {
       .where(eq(users.id, user.id));
 
     const token = generateToken(user);
+
+    void audit({
+      action: "auth.login",
+      userId: user.id,
+      userEmail: user.email,
+      targetType: "user",
+      targetId: user.id,
+      ip: clientIp(req),
+    });
 
     return res.json({
       token,

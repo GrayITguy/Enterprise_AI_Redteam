@@ -7,6 +7,7 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../middlewa
 import { asyncHandler } from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 import { logger } from "../utils/logger.js";
+import { audit, clientIp } from "../services/auditService.js";
 
 export const usersRouter = Router();
 usersRouter.use(apiLimiter);
@@ -58,6 +59,15 @@ usersRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =>
   }
 
   await db.update(users).set({ role: parsed.data.role }).where(eq(users.id, target.id));
+  void audit({
+    action: "user.role_change",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "user",
+    targetId: target.id,
+    detail: { from: target.role, to: parsed.data.role },
+    ip: clientIp(req),
+  });
   const updated = await getRow(db.select(publicColumns).from(users).where(eq(users.id, target.id)));
   return res.json(updated);
 }));
@@ -121,5 +131,14 @@ usersRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res) =
   }
 
   logger.info(`[Users] User ${target.id} deleted by admin ${req.user!.id} (${scanIds.length} scans removed)`);
+  void audit({
+    action: "user.delete",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "user",
+    targetId: target.id,
+    detail: { scansRemoved: scanIds.length },
+    ip: clientIp(req),
+  });
   return res.status(204).send();
 }));

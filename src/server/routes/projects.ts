@@ -17,6 +17,7 @@ import {
   BlockedTargetError,
   UnauthorizedTargetError,
 } from "../utils/urlValidation.js";
+import { audit, clientIp } from "../services/auditService.js";
 
 /**
  * Returns an error string if the target host is blocked (SSRF) or not in the
@@ -97,6 +98,16 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
 
   await db.insert(projects).values(newProject);
 
+  void audit({
+    action: "project.create",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: newProject.id,
+    detail: { name: newProject.name, targetUrl: newProject.targetUrl, providerType: newProject.providerType },
+    ip: clientIp(req),
+  });
+
   return res.status(201).json({
     ...newProject,
     providerConfig: redactProviderConfig(parsed.data.providerConfig),
@@ -175,6 +186,16 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
 
   await db.update(projects).set(updates).where(eq(projects.id, req.params.id));
 
+  void audit({
+    action: "project.update",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: req.params.id,
+    detail: { fields: Object.keys(updates).filter((k) => k !== "updatedAt") },
+    ip: clientIp(req),
+  });
+
   const updated = await getRow(db
     .select()
     .from(projects)
@@ -206,6 +227,15 @@ projectsRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res
     .update(projects)
     .set({ isArchived: true, updatedAt: new Date() })
     .where(eq(projects.id, req.params.id));
+
+  void audit({
+    action: "project.delete",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: req.params.id,
+    ip: clientIp(req),
+  });
 
   return res.status(204).send();
 }));

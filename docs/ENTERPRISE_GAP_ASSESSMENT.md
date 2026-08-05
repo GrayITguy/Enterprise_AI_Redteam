@@ -66,20 +66,18 @@ Nothing previously stopped EART being pointed at a third party's endpoint. **Now
 ### E. Detection quality & calibration — 🟠 Impact · `L` Effort · ◑ Confidence
 The AI judge and the DeepTeam/PyRIT scorers are only as good as the evaluator model (Haiku by default). There is **no ground-truth benchmark, no measured false-positive/negative rate, no inter-rater/human-review workflow, and no confidence surfaced per finding**. A red team will not trust an automated "vulnerable/safe" verdict without knowing its error rate. **Needed:** a labelled benchmark set, a scored eval of the judge, and a human-triage queue.
 
-### F. Enterprise IAM & compliance — 🟠 Impact · `XL` Effort · ◑ Confidence
-- No SSO / SAML / OIDC / SCIM; auth is local JWT + 3 fixed roles (admin/analyst/viewer).
-- No audit log / SIEM export of who ran what against whom.
+### F. Enterprise IAM & compliance — 🟠 Impact · `XL` Effort · ◑ Confidence · **partially addressed**
+- **Audit log — ✅ done.** An append-only `audit_log` records logins (incl. failures), project/scan/user mutations with actor, target, IP and ms-timestamp; admin-readable/filterable at `GET /api/audit`. *Residual:* no SIEM/export pipeline or tamper-evidence (hash chaining) yet.
+- No SSO / SAML / OIDC / SCIM; auth is local JWT + 3 fixed roles (admin/analyst/viewer). **(still open — large)**
 - Secrets: API keys are encrypted at rest (✔ addressed earlier) but there's no KMS/Vault integration or rotation.
 - No data-residency, retention, or deletion controls for stored prompts/responses (which may contain sensitive target data).
-- No documented threat model of EART itself, no third-party pentest, no SOC2/ISO evidence.
-
-Any of these can independently block enterprise procurement.
+- No documented threat model of EART itself, no third-party pentest, no SOC2/ISO evidence. **(external/organizational, not code)**
 
 ### G. Operational maturity — 🟡 Impact · `L` Effort · ◑ Confidence
 Single-node by default (SQLite; Postgres supported ✔). No HA, no horizontal scale story for the worker fleet, no documented multi-tenant isolation guarantees, no resource quotas per user/org. Fine for a team tool; not for a shared enterprise service.
 
-### H. Reporting, frameworks & reproducibility — 🟡 Impact · `M` Effort · ◑ Confidence
-OWASP-LLM tagging exists; PDF/HTML/CSV/JSON export exists. Missing: **MITRE ATLAS** and **NIST AI RMF** mappings, run reproducibility (pinned tool versions + seeds recorded per scan), chain-of-custody/evidence integrity for auditors, and longitudinal trend tracking across scans.
+### H. Reporting, frameworks & reproducibility — 🟡 Impact · `M` Effort · ◑ Confidence · **partially addressed**
+OWASP-LLM tagging exists; PDF/HTML/CSV/JSON export exists. **Run reproducibility — ✅ done:** each scan records a `run_metadata` snapshot (plugins, engine image tags, knob values, evaluator model) at run start. *Still missing:* **MITRE ATLAS** and **NIST AI RMF** mappings (next up), exact in-container tool versions (image tags stand in for now), chain-of-custody/evidence integrity for auditors, and longitudinal trend tracking across scans.
 
 ### I. Test coverage of EART itself — 🟡 Impact · `M` Effort · ✔ Confidence
 ~126 backend + ~56 Python worker unit tests + frontend tests. Good for a project this size, but there are **no integration tests against live models, no load/soak tests, and the worker images aren't exercised in CI**. Coverage of the scan pipeline's failure modes (cancellation mid-tree-attack, evaluator outage, partial persistence) is light.

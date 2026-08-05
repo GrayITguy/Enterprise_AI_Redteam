@@ -86,6 +86,7 @@ export const scans = pgTable("scans", {
   notifyOn: text("notify_on"),
   /** 0-100 progress percentage, updated in real-time during scan execution */
   progress: integer("progress").default(0).notNull(),
+  runMetadata: text("run_metadata"),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -131,4 +132,17 @@ export const appSettings = pgTable("app_settings", {
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
   updatedBy: text("updated_by").references(() => users.id),
+});
+
+// ─── Audit Log (append-only security/compliance trail) ───────────────────────
+export const auditLog = pgTable("audit_log", {
+  id: text("id").primaryKey(),
+  userId: text("user_id"),
+  userEmail: text("user_email"),
+  action: text("action").notNull(),
+  targetType: text("target_type"),
+  targetId: text("target_id"),
+  detail: text("detail"),
+  ip: text("ip"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 });

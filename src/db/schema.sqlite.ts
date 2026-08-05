@@ -83,6 +83,9 @@ export const scans = sqliteTable("scans", {
   notifyOn: text("notify_on"),
   /** 0-100 progress percentage, updated in real-time during scan execution */
   progress: integer("progress").default(0).notNull(),
+  /** JSON snapshot captured at run start (plugins, engine image tags, knob
+   *  values, evaluator model) for reproducibility. */
+  runMetadata: text("run_metadata"),
   startedAt: integer("started_at", { mode: "timestamp" }),
   completedAt: integer("completed_at", { mode: "timestamp" }),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -134,4 +137,26 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   updatedBy: text("updated_by").references(() => users.id),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit Log (who did what, when) — append-only security/compliance trail
+// ─────────────────────────────────────────────────────────────────────────────
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey(),
+  /** Actor user id (nullable for system/unauthenticated events). No FK so the
+   *  trail survives user deletion. */
+  userId: text("user_id"),
+  /** Denormalized actor email so the record is readable after a user is removed. */
+  userEmail: text("user_email"),
+  /** Dotted action, e.g. "scan.create", "project.update", "auth.login". */
+  action: text("action").notNull(),
+  /** "scan" | "project" | "user" | "settings" | null */
+  targetType: text("target_type"),
+  targetId: text("target_id"),
+  /** JSON string with action-specific, non-sensitive detail. */
+  detail: text("detail"),
+  ip: text("ip"),
+  // Millisecond precision so same-second events keep a deterministic order.
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });

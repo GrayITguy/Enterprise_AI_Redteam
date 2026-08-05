@@ -23,3 +23,4 @@ export const scans = active.scans as unknown as typeof sqliteSchema.scans;
 export const scanResults = active.scanResults as unknown as typeof sqliteSchema.scanResults;
 export const reports = active.reports as unknown as typeof sqliteSchema.reports;
 export const appSettings = active.appSettings as unknown as typeof sqliteSchema.appSettings;
+export const auditLog = active.auditLog as unknown as typeof sqliteSchema.auditLog;
