@@ -62,7 +62,9 @@ describe("Scans API", () => {
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.plugins)).toBe(true);
-      expect(res.body.plugins.length).toBe(60);
+      expect(res.body.plugins.length).toBeGreaterThanOrEqual(60);
+      // Catalog entries now carry framework mappings (ATLAS/NIST).
+      expect(res.body.plugins[0].frameworks).toBeDefined();
       expect(res.body.presets).toBeDefined();
       expect(res.body.presets.quick).toBeDefined();
       expect(res.body.presets.owasp).toBeDefined();

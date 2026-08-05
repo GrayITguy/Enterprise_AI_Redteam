@@ -64,6 +64,18 @@ VULN_SPEC = {
     "deepteam:copyright-violations":  ("IntellectualProperty", "Intellectual Property", ["copyright_violations"], "legal", "medium", "LLM10"),
     "deepteam:excessive-agency":      ("ExcessiveAgency", "Excessive Agency", None, "agentic", "critical", "LLM08"),
     "deepteam:robustness-hijacking":  ("Robustness", "Robustness", ["hijacking"], "robustness", "high", "LLM01"),
+    # ── Expanded coverage (verified against deepteam 1.0.x) ──────────────────
+    "deepteam:prompt-leakage":        ("PromptLeakage", "Prompt Leakage", ["secrets_and_credentials", "instructions"], "disclosure", "high", "LLM07"),
+    "deepteam:rbac":                  ("RBAC", "RBAC", None, "authorization", "high", "LLM08"),
+    "deepteam:bola":                  ("BOLA", "BOLA", None, "authorization", "high", "LLM08"),
+    "deepteam:bfla":                  ("BFLA", "BFLA", None, "authorization", "high", "LLM08"),
+    "deepteam:sql-injection":         ("SQLInjection", "SQL Injection", None, "injection", "critical", "LLM05"),
+    "deepteam:shell-injection":       ("ShellInjection", "Shell Injection", None, "injection", "critical", "LLM05"),
+    "deepteam:ssrf":                  ("SSRF", "SSRF", None, "injection", "high", "LLM06"),
+    "deepteam:illegal-activity":      ("IllegalActivity", "Illegal Activity", None, "safety", "high", "LLM05"),
+    "deepteam:personal-safety":       ("PersonalSafety", "Personal Safety", None, "safety", "high", "LLM05"),
+    "deepteam:debug-access":          ("DebugAccess", "Debug Access", None, "disclosure", "medium", "LLM07"),
+    "deepteam:graphic-content":       ("GraphicContent", "Graphic Content", None, "safety", "medium", "LLM05"),
 }
 
 # Metadata-only view used by the heuristic fallback and unknown-plugin handling.

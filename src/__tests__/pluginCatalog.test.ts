@@ -8,8 +8,9 @@ import {
 } from "../server/config/pluginCatalog.js";
 
 describe("PLUGINS catalog", () => {
-  it("contains exactly 60 plugins", () => {
-    expect(PLUGINS).toHaveLength(60);
+  it("contains a substantial plugin catalog", () => {
+    // Lower bound so the test doesn't churn on every coverage expansion.
+    expect(PLUGINS.length).toBeGreaterThanOrEqual(60);
   });
 
   it("all plugin IDs are unique", () => {
@@ -58,8 +59,8 @@ describe("PRESETS", () => {
     expect(covered.size).toBeGreaterThanOrEqual(6);
   });
 
-  it("full preset contains all 60 plugins", () => {
-    expect(PRESETS.full.plugins).toHaveLength(60);
+  it("full preset contains every catalog plugin", () => {
+    expect(PRESETS.full.plugins).toHaveLength(PLUGINS.length);
   });
 
   it("preset plugin IDs all exist in the catalog", () => {
@@ -136,12 +137,12 @@ describe("getPluginsByTool()", () => {
     expect(result.every((p) => p.tool === "deepteam")).toBe(true);
   });
 
-  it("all 4 tools together account for all 60 plugins", () => {
+  it("all 4 tools together account for every catalog plugin", () => {
     const total =
       getPluginsByTool("promptfoo").length +
       getPluginsByTool("garak").length +
       getPluginsByTool("pyrit").length +
       getPluginsByTool("deepteam").length;
-    expect(total).toBe(60);
+    expect(total).toBe(PLUGINS.length);
   });
 });

@@ -43,16 +43,16 @@ The engine integrations were validated **against the real upstream packages' API
 
 ## 4. Gap register
 
-### A. Engine coverage depth — 🔴 Impact · `L` Effort · ◑ Confidence
-EART maps a **curated slice** of each engine, not its full surface.
+### A. Engine coverage depth — 🟠 Impact (was 🔴) · `L` Effort · ◑ Confidence · **partially addressed**
+EART maps a **curated slice** of each engine. Coverage was expanded **60 → 82 plugins**: +11 garak probes (verified present) and +11 deepteam vulnerabilities (verified in-package).
 
 | Engine | Roughly available upstream | Mapped in EART | Gap |
 |--------|---------------------------|----------------|-----|
-| Garak | ~100+ probe modules | ~17 probe groups | most probes unmapped |
-| PyRIT | dozens of attacks / converters / scorers | 9 plugins → 7 attack strategies | no converters exposed, few scorers, no multi-modal |
-| DeepTeam | 40+ vulnerability types | ~8 vulnerabilities | most vulns + attack enhancements unmapped |
+| Garak | ~100+ probe modules | ~27 probe groups | still a subset |
+| PyRIT | dozens of attacks / converters / scorers | 9 plugins → 7 attack strategies | converters/multimodal still unexposed |
+| DeepTeam | 40+ vulnerability types | ~24 vulnerabilities | closer, still not full |
 
-*(Counts are approximate — verify against the pinned tool versions.)* The "60 tests" headline is a thin veneer over each tool's real capability. **A red team will notice immediately.** Closing this is mechanical but large: expand the plugin catalog + mapping tables, expose converters/scorers, and let advanced users pass through native tool configs.
+*(Counts are approximate — verify against the pinned tool versions.)* Materially broader now, but still not parity — full garak probe coverage, PyRIT converters/multimodal, and a native-config pass-through for power users remain follow-up. A serious evaluator will still want more breadth, but the "thin veneer" characterization no longer holds.
 
 ### B. Live-model validation & run reliability — ✅ **Addressed** (was 🔴)
 **Now implemented:** a separate **Worker Images** CI workflow builds all three garak/pyrit/deepteam images (matrix + buildx cache) and protocol-checks each, triggered on `python-workers/**` changes / weekly / manual so the heavy builds don't slow normal PRs — closing "images never built in CI." And a standalone **live-model smoke** (`npm run smoke:live`) drives a real adversarial prompt through a real target + independent judge end-to-end, wired into CI to run whenever a maintainer supplies the secrets (skips cleanly otherwise). *Residual:* the live smoke covers the target-call + judge path, not yet a full multi-plugin scan against live models; deeper run-reliability hardening (mid-tree-attack partial failures, provider-quirk matrix) is follow-up.
