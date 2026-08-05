@@ -9,3 +9,7 @@ logs/
 *.db-shm
 *.db-wal
 dump.rdb
+
+# Python
+__pycache__/
+*.py[cod]

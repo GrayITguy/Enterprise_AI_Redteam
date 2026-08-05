@@ -75,6 +75,39 @@ jobs:
       - name: Run frontend tests
         run: cd site && npm test
 
+  # ─── Python worker tests ───────────────────────────────────────────────────
+  # Fast, dependency-free: the runners' pure helpers (config building, prompt
+  # shaping, detector scoring, the SSRF guard) are unit-tested with the stdlib,
+  # and each Dockerfile is validated to build. The heavy tool images (garak's
+  # Rust + ML stack, etc.) are NOT built here — that would add 20+ min per run.
+  test-workers:
+    name: Python Worker Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Hard gate: the unit tests import the garak/pyrit runners and py_compile
+      # the deepteam runner, so any syntax or logic drift in the worker code
+      # fails CI here.
+      - name: Run worker unit tests
+        run: python -m unittest discover -s python-workers/tests -p "test_*.py" -v
+
+      # Non-blocking signal: validate each worker Dockerfile without a full
+      # build (the heavy tool images — garak's Rust + ML stack — take 20+ min
+      # and are network-flaky, so they are not built on every push). Surfaced
+      # in the logs; does not gate the merge.
+      - name: Lint worker Dockerfiles
+        continue-on-error: true
+        run: |
+          for tool in garak pyrit deepteam; do
+            echo "── checking python-workers/$tool/Dockerfile ──"
+            docker build --check "python-workers/$tool" || echo "::warning::Dockerfile check reported issues for $tool"
+          done
+
   # ─── Build verification ────────────────────────────────────────────────────
   build:
     name: Build
