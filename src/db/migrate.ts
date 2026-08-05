@@ -126,7 +126,21 @@ function applySchemaDirectly(): void {
       updated_by TEXT REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_email TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      detail TEXT,
+      ip TEXT,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
     CREATE INDEX IF NOT EXISTS idx_scans_project_id ON scans(project_id);
     CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id);
     CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
@@ -139,6 +153,7 @@ function applySchemaDirectly(): void {
     "ALTER TABLE scans ADD COLUMN recurrence TEXT",
     "ALTER TABLE scans ADD COLUMN notify_on TEXT",
     "ALTER TABLE scans ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE scans ADD COLUMN run_metadata TEXT",
   ];
   for (const stmt of alterScans) {
     try { sqlite.exec(stmt); } catch { /* column already exists */ }
@@ -203,6 +218,7 @@ async function applyPostgresSchema(): Promise<void> {
       recurrence TEXT,
       notify_on TEXT,
       progress INTEGER NOT NULL DEFAULT 0,
+      run_metadata TEXT,
       started_at TIMESTAMPTZ,
       completed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL
@@ -239,7 +255,21 @@ async function applyPostgresSchema(): Promise<void> {
       updated_by TEXT REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      user_email TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      detail TEXT,
+      ip TEXT,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
     CREATE INDEX IF NOT EXISTS idx_scans_project_id ON scans(project_id);
     CREATE INDEX IF NOT EXISTS idx_scans_user_id ON scans(user_id);
     CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);

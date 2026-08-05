@@ -57,29 +57,27 @@ EART maps a **curated slice** of each engine, not its full surface.
 ### B. Live-model validation & run reliability — 🔴 Impact · `M` Effort · ✔ Confidence
 No end-to-end run against a real target + evaluator exists. Real runs will surface issues mocks can't: schema-parse failures on real model output, provider quirks (Ollama openai-compat, Azure), timeouts, and partial failures mid-tree-attack. **Needed:** a live-model smoke/e2e harness (cheap model, few plugins) run in CI or a documented manual gate, plus a CI job that at least **builds** the worker images so drift is caught.
 
-### C. Cost & rate governance — 🔴 Impact · `M` Effort · ✔ Confidence
-Multi-turn adversarial attacks (PyRIT TAP/PAIR, DeepTeam, Crescendo) can fire **hundreds of LLM calls** per plugin against both target and evaluator. Today the only bounds are env knobs (`PYRIT_TREE_*`, `GARAK_PROMPT_CAP`, `DEEPTEAM_*`). There is **no per-scan token/cost budget, no spend cap, no estimate-before-run, and no rate limiting on the target** — a scan could rack up large API bills or hammer a production model. Enterprises will require a hard budget ceiling and a dry-run cost estimate.
+### C. Cost & rate governance — ✅ **Addressed** (was 🔴)
+Multi-turn adversarial attacks can fire hundreds of LLM calls per plugin. **Now implemented:** a pre-run cost estimate (`GET /api/scans/estimate`) giving an upper-bound target-call count per engine; a hard ceiling `SCAN_MAX_TARGET_CALLS` (default 25 000) that refuses over-budget scans at creation with the estimate; and `SCAN_TARGET_RATE_LIMIT` (calls/min) throttling EART's own attack-loop calls. *Residual:* the Dockerised workers self-bound via their prompt/turn caps (`GARAK_PROMPT_CAP`, `PYRIT_TREE_*`, `DEEPTEAM_*`) rather than the shared throttle, and there is not yet a *token*-denominated budget (calls, not tokens). Good enough to stop runaway scans; token-accurate billing is follow-up.
 
-### D. Authorization & safety guardrails on targets — 🟠 Impact · `M` Effort · ◑ Confidence
-Nothing enforces that the user is *authorized* to attack a given target, or prevents pointing EART at a third party's production endpoint. SSRF guards exist (✔ verified — metadata/private-IP blocking), but there's no target allow-list, no proof-of-ownership step, and no scan-authorization record. This is both a safety and a legal exposure.
+### D. Authorization & safety guardrails on targets — ✅ **Addressed** (was 🟠)
+Nothing previously stopped EART being pointed at a third party's endpoint. **Now implemented:** a target authorization allow-list (`TARGET_ALLOWLIST`, exact or `*.wildcard` hosts) enforced at project create/update **and** re-checked at scan time; the SSRF metadata/private-IP denylist still applies underneath. *Residual:* no cryptographic proof-of-ownership and no per-scan signed authorization record — the allow-list is administrator-configured trust, which is the standard bar but not attestation.
 
 ### E. Detection quality & calibration — 🟠 Impact · `L` Effort · ◑ Confidence
 The AI judge and the DeepTeam/PyRIT scorers are only as good as the evaluator model (Haiku by default). There is **no ground-truth benchmark, no measured false-positive/negative rate, no inter-rater/human-review workflow, and no confidence surfaced per finding**. A red team will not trust an automated "vulnerable/safe" verdict without knowing its error rate. **Needed:** a labelled benchmark set, a scored eval of the judge, and a human-triage queue.
 
-### F. Enterprise IAM & compliance — 🟠 Impact · `XL` Effort · ◑ Confidence
-- No SSO / SAML / OIDC / SCIM; auth is local JWT + 3 fixed roles (admin/analyst/viewer).
-- No audit log / SIEM export of who ran what against whom.
+### F. Enterprise IAM & compliance — 🟠 Impact · `XL` Effort · ◑ Confidence · **partially addressed**
+- **Audit log — ✅ done.** An append-only `audit_log` records logins (incl. failures), project/scan/user mutations with actor, target, IP and ms-timestamp; admin-readable/filterable at `GET /api/audit`. *Residual:* no SIEM/export pipeline or tamper-evidence (hash chaining) yet.
+- No SSO / SAML / OIDC / SCIM; auth is local JWT + 3 fixed roles (admin/analyst/viewer). **(still open — large)**
 - Secrets: API keys are encrypted at rest (✔ addressed earlier) but there's no KMS/Vault integration or rotation.
 - No data-residency, retention, or deletion controls for stored prompts/responses (which may contain sensitive target data).
-- No documented threat model of EART itself, no third-party pentest, no SOC2/ISO evidence.
-
-Any of these can independently block enterprise procurement.
+- No documented threat model of EART itself, no third-party pentest, no SOC2/ISO evidence. **(external/organizational, not code)**
 
 ### G. Operational maturity — 🟡 Impact · `L` Effort · ◑ Confidence
 Single-node by default (SQLite; Postgres supported ✔). No HA, no horizontal scale story for the worker fleet, no documented multi-tenant isolation guarantees, no resource quotas per user/org. Fine for a team tool; not for a shared enterprise service.
 
-### H. Reporting, frameworks & reproducibility — 🟡 Impact · `M` Effort · ◑ Confidence
-OWASP-LLM tagging exists; PDF/HTML/CSV/JSON export exists. Missing: **MITRE ATLAS** and **NIST AI RMF** mappings, run reproducibility (pinned tool versions + seeds recorded per scan), chain-of-custody/evidence integrity for auditors, and longitudinal trend tracking across scans.
+### H. Reporting, frameworks & reproducibility — 🟡 Impact · `M` Effort · ◑ Confidence · **partially addressed**
+OWASP-LLM tagging exists; PDF/HTML/CSV/JSON export exists. **Run reproducibility — ✅ done:** each scan records a `run_metadata` snapshot (plugins, engine image tags, knob values, evaluator model) at run start. *Still missing:* **MITRE ATLAS** and **NIST AI RMF** mappings (next up), exact in-container tool versions (image tags stand in for now), chain-of-custody/evidence integrity for auditors, and longitudinal trend tracking across scans.
 
 ### I. Test coverage of EART itself — 🟡 Impact · `M` Effort · ✔ Confidence
 ~126 backend + ~56 Python worker unit tests + frontend tests. Good for a project this size, but there are **no integration tests against live models, no load/soak tests, and the worker images aren't exercised in CI**. Coverage of the scan pipeline's failure modes (cancellation mid-tree-attack, evaluator outage, partial persistence) is light.

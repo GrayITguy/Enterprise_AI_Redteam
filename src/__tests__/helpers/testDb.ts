@@ -56,6 +56,7 @@ const CREATE_SCHEMA_SQL = `
     scheduled_at INTEGER,
     recurrence TEXT,
     notify_on TEXT,
+    run_metadata TEXT,
     started_at INTEGER,
     completed_at INTEGER,
     created_at INTEGER NOT NULL
@@ -92,6 +93,18 @@ const CREATE_SCHEMA_SQL = `
     updated_by TEXT REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    user_email TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    detail TEXT,
+    ip TEXT,
+    created_at INTEGER NOT NULL
+  );
+
 `;
 
 let schemaApplied = false;
@@ -113,6 +126,7 @@ export function clearTestDb(): void {
     DELETE FROM projects;
     DELETE FROM invite_codes;
     DELETE FROM app_settings;
+    DELETE FROM audit_log;
     DELETE FROM users;
   `);
 }

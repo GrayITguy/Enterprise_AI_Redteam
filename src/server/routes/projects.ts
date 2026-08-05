@@ -12,6 +12,29 @@ import {
   mergeProviderSecrets,
 } from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
+import {
+  assertTargetAuthorized,
+  BlockedTargetError,
+  UnauthorizedTargetError,
+} from "../utils/urlValidation.js";
+import { audit, clientIp } from "../services/auditService.js";
+
+/**
+ * Returns an error string if the target host is blocked (SSRF) or not in the
+ * configured authorization allow-list, else null. Kept as a helper so both
+ * create and update return a clean 403 without leaking a stack trace.
+ */
+function checkTargetAuthorized(targetUrl: string): string | null {
+  try {
+    assertTargetAuthorized(targetUrl);
+    return null;
+  } catch (err) {
+    if (err instanceof UnauthorizedTargetError || err instanceof BlockedTargetError) {
+      return err.message;
+    }
+    throw err;
+  }
+}
 
 export const projectsRouter = Router();
 projectsRouter.use(apiLimiter);
@@ -56,6 +79,9 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   }
 
+  const authError = checkTargetAuthorized(parsed.data.targetUrl);
+  if (authError) return res.status(403).json({ error: authError });
+
   const now = new Date();
   const newProject = {
     id: uuid(),
@@ -71,6 +97,16 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
   };
 
   await db.insert(projects).values(newProject);
+
+  void audit({
+    action: "project.create",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: newProject.id,
+    detail: { name: newProject.name, targetUrl: newProject.targetUrl, providerType: newProject.providerType },
+    ip: clientIp(req),
+  });
 
   return res.status(201).json({
     ...newProject,
@@ -131,6 +167,11 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
     updatedAt: new Date(),
   };
 
+  if (parsed.data.targetUrl !== undefined) {
+    const authError = checkTargetAuthorized(parsed.data.targetUrl);
+    if (authError) return res.status(403).json({ error: authError });
+  }
+
   if (parsed.data.name !== undefined) updates.name = parsed.data.name;
   if (parsed.data.description !== undefined) updates.description = parsed.data.description ?? null;
   if (parsed.data.targetUrl !== undefined) updates.targetUrl = parsed.data.targetUrl;
@@ -144,6 +185,16 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
   }
 
   await db.update(projects).set(updates).where(eq(projects.id, req.params.id));
+
+  void audit({
+    action: "project.update",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: req.params.id,
+    detail: { fields: Object.keys(updates).filter((k) => k !== "updatedAt") },
+    ip: clientIp(req),
+  });
 
   const updated = await getRow(db
     .select()
@@ -176,6 +227,15 @@ projectsRouter.delete("/:id", asyncHandler(async (req: AuthenticatedRequest, res
     .update(projects)
     .set({ isArchived: true, updatedAt: new Date() })
     .where(eq(projects.id, req.params.id));
+
+  void audit({
+    action: "project.delete",
+    userId: req.user!.id,
+    userEmail: req.user!.email,
+    targetType: "project",
+    targetId: req.params.id,
+    ip: clientIp(req),
+  });
 
   return res.status(204).send();
 }));

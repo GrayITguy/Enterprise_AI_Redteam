@@ -114,6 +114,64 @@ export class BlockedTargetError extends Error {
   }
 }
 
+export class UnauthorizedTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnauthorizedTargetError";
+  }
+}
+
+/**
+ * Parse `TARGET_ALLOWLIST` into host patterns. Each entry is an exact host or a
+ * `*.example.com` wildcard (matching any subdomain, and the apex). Empty/unset
+ * means "no authorization restriction" — any non-blocked host is allowed.
+ */
+function targetAllowlistPatterns(): string[] {
+  return (process.env.TARGET_ALLOWLIST ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hostMatchesPattern(host: string, pattern: string): boolean {
+  if (pattern.startsWith("*.")) {
+    const suffix = pattern.slice(1); // ".example.com"
+    const apex = pattern.slice(2); // "example.com"
+    return host === apex || host.endsWith(suffix);
+  }
+  return host === pattern;
+}
+
+/** Whether a target authorization allow-list is configured. */
+export function targetAllowlistEnabled(): boolean {
+  return targetAllowlistPatterns().length > 0;
+}
+
+/**
+ * Enforce, in addition to {@link assertUrlNotBlocked}, that the target host is
+ * explicitly authorized for scanning. When `TARGET_ALLOWLIST` is set, only
+ * hosts matching a pattern may be scanned — preventing EART from being pointed
+ * at a third party's production endpoint. When unset, only the SSRF denylist
+ * applies (unchanged behavior). Call at project create/update and scan create.
+ */
+export function assertTargetAuthorized(rawUrl: string): void {
+  assertUrlNotBlocked(rawUrl);
+  const patterns = targetAllowlistPatterns();
+  if (patterns.length === 0) return; // no allow-list configured → not restricted
+
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    throw new BlockedTargetError("Invalid URL format");
+  }
+  if (!patterns.some((p) => hostMatchesPattern(host, p))) {
+    throw new UnauthorizedTargetError(
+      `Target host '${host}' is not in TARGET_ALLOWLIST. An administrator must authorize this host before it can be scanned.`
+    );
+  }
+}
+
 /**
  * Throw {@link BlockedTargetError} if `rawUrl` is not a safe outbound target.
  * Enforces http(s) only and blocks cloud-metadata + link-local addresses in any

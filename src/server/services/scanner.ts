@@ -12,6 +12,7 @@ import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
 import { resolveEvalProviderDescriptor } from "./aiProvider.js";
+import { throttleTargetCall } from "./targetThrottle.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 import { publishProgress } from "./scanProgress.js";
 
@@ -163,6 +164,11 @@ export class ScanOrchestrator {
 
       const tools = Object.keys(byTool) as PluginTool[];
       const providerConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
+
+      // Reproducibility: snapshot the config that determines this scan's results
+      // (plugins, engine image tags, knob values, evaluator model — never any
+      // secret) so a finding can be traced back to exactly how it was produced.
+      await this.persistRunMetadata(scanId, pluginIds, tools, project.providerType);
 
       let completedTools = 0;
 
@@ -845,6 +851,49 @@ export class ScanOrchestrator {
   // ─── Shared attack loop ────────────────────────────────────────────────────
 
   /**
+   * Capture the reproducibility snapshot for a scan run. Records only
+   * non-sensitive configuration (evaluator model name, never its key).
+   */
+  private async persistRunMetadata(
+    scanId: string,
+    pluginIds: string[],
+    tools: PluginTool[],
+    providerType: string
+  ): Promise<void> {
+    try {
+      const evalDescriptor = tools.some((t) => t === "deepteam" || t === "pyrit")
+        ? await resolveEvalProviderDescriptor()
+        : null;
+      const metadata = {
+        capturedAt: new Date().toISOString(),
+        eartVersion: process.env.npm_package_version ?? "2.2.0",
+        providerType,
+        plugins: pluginIds,
+        tools,
+        engineImages: {
+          garak: process.env.GARAK_IMAGE ?? "eart-garak:latest",
+          pyrit: process.env.PYRIT_IMAGE ?? "eart-pyrit:latest",
+          deepteam: process.env.DEEPTEAM_IMAGE ?? "eart-deepteam:latest",
+        },
+        knobs: {
+          GARAK_PROMPT_CAP: process.env.GARAK_PROMPT_CAP ?? null,
+          PYRIT_MAX_TURNS: process.env.PYRIT_MAX_TURNS ?? null,
+          PYRIT_TREE_WIDTH: process.env.PYRIT_TREE_WIDTH ?? null,
+          PYRIT_TREE_DEPTH: process.env.PYRIT_TREE_DEPTH ?? null,
+          DEEPTEAM_ATTACKS: process.env.DEEPTEAM_ATTACKS ?? null,
+          DEEPTEAM_ATTACKS_PER_TYPE: process.env.DEEPTEAM_ATTACKS_PER_TYPE ?? null,
+          SCAN_JUDGE: process.env.SCAN_JUDGE ?? "on",
+        },
+        // Model name only — the evaluator provider's API key is never recorded.
+        evaluator: evalDescriptor ? { type: evalDescriptor.type, model: evalDescriptor.model } : null,
+      };
+      await db.update(scans).set({ runMetadata: JSON.stringify(metadata) }).where(eq(scans.id, scanId));
+    } catch (err) {
+      logger.warn(`[Scanner] Failed to persist run metadata for ${scanId}: ${errorMessage(err)}`);
+    }
+  }
+
+  /**
    * Iterate over plugins → attacks and call `sendAttack` for each.
    * Handles the no-attacks placeholder, result emission, and error recording
    * in one place so the caller only provides the HTTP call logic.
@@ -885,6 +934,7 @@ export class ScanOrchestrator {
       for (const attack of attacks) {
         const start = Date.now();
         try {
+          await throttleTargetCall();
           const { responseText, extraEvidence } = await sendAttack(attack);
           // Empty response = provider comms failure, not a genuine pass.
           const grade = responseText
