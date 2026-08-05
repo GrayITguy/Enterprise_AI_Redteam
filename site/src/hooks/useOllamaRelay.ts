@@ -20,16 +20,25 @@ export function useOllamaRelay(): void {
     const sleep = (ms: number) =>
       new Promise<void>((r) => setTimeout(r, ms));
 
+    // The relay endpoints are behind requireAuth — send the JWT (raw fetch
+    // doesn't go through the axios interceptor that normally attaches it).
+    const authHeaders = (extra?: Record<string, string>): Record<string, string> => {
+      const token = localStorage.getItem("eart_token");
+      return { ...(extra ?? {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    };
+
     const loop = async () => {
       while (active) {
         try {
           // Long-poll: backend holds the connection open for up to 30 s.
           const res = await fetch("/api/ollama/relay/poll", {
+            headers: authHeaders(),
             signal: AbortSignal.timeout(35_000),
           });
 
           if (!res.ok) {
-            await sleep(2_000);
+            // 401 → not signed in yet; back off and retry rather than hot-loop.
+            await sleep(res.status === 401 ? 5_000 : 2_000);
             continue;
           }
 
@@ -71,14 +80,14 @@ export function useOllamaRelay(): void {
 
             await fetch("/api/ollama/relay/fulfill", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: authHeaders({ "Content-Type": "application/json" }),
               body: JSON.stringify({ requestId, data }),
             });
           } catch (err) {
             // Report the error so the backend promise rejects cleanly.
             await fetch("/api/ollama/relay/fulfill", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: authHeaders({ "Content-Type": "application/json" }),
               body: JSON.stringify({ requestId, error: String(err) }),
             });
           }
