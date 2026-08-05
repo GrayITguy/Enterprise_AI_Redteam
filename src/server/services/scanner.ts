@@ -252,10 +252,13 @@ export class ScanOrchestrator {
         const toolPlugins = byTool[tool];
         logger.info(`[Scanner] Running ${tool} with ${toolPlugins.length} plugins`);
 
-        // deepteam's real engine needs an independent evaluator LLM (never the
-        // target). Resolve it once here; null → the worker uses its heuristics.
+        // deepteam's and pyrit's real engines need an independent evaluator LLM
+        // (never the target) to simulate/score attacks. Resolve it here; null →
+        // the worker falls back to its labelled heuristic probes.
         const evalProvider =
-          tool === "deepteam" ? (await resolveEvalProviderDescriptor()) ?? undefined : undefined;
+          tool === "deepteam" || tool === "pyrit"
+            ? (await resolveEvalProviderDescriptor()) ?? undefined
+            : undefined;
 
         const config = {
           targetUrl: project.targetUrl,

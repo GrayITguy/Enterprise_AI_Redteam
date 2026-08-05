@@ -4,7 +4,7 @@
 
 EART is a self-hosted AI security testing dashboard that unifies multiple red-teaming approaches (Promptfoo, Garak, PyRIT, DeepTeam) behind a single web interface. It provides 60 vulnerability tests covering OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more.
 
-> **Engine reality (keep this honest in code and docs):** the **Garak** and **DeepTeam** workers invoke real external engines — Garak always, DeepTeam when an independent evaluator LLM is configured (else it falls back to labelled heuristic probes). **Promptfoo** uses its real `evaluate` harness for cloud providers (OpenAI/Anthropic/Azure) and EART's own `PLUGIN_ATTACKS` library for the Ollama/custom paths; grading is regex plus an optional **AI judge** (`src/server/services/attackJudge.ts`) that re-checks regex "passes". **PyRIT** still runs EART's own probes. Making PyRIT real is the remaining engine work. See README → "Which engines actually run."
+> **Engine reality (keep this honest in code and docs):** the **Garak**, **DeepTeam**, and **PyRIT** workers invoke real external engines — Garak always; DeepTeam and PyRIT when an independent evaluator LLM is configured (else they fall back to labelled heuristic probes, `mode: builtin-heuristic`). **Promptfoo** uses its real `evaluate` harness for cloud providers (OpenAI/Anthropic/Azure) and EART's own `PLUGIN_ATTACKS` library for the Ollama/custom paths; grading is regex plus an optional **AI judge** (`src/server/services/attackJudge.ts`) that re-checks regex "passes". All four engines are now real or honestly labelled. See README → "Which engines actually run."
 
 ## Tech Stack
 
