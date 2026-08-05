@@ -12,6 +12,7 @@ import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
 import { resolveEvalProviderDescriptor } from "./aiProvider.js";
+import { throttleTargetCall } from "./targetThrottle.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 import { publishProgress } from "./scanProgress.js";
 
@@ -885,6 +886,7 @@ export class ScanOrchestrator {
       for (const attack of attacks) {
         const start = Date.now();
         try {
+          await throttleTargetCall();
           const { responseText, extraEvidence } = await sendAttack(attack);
           // Empty response = provider comms failure, not a genuine pass.
           const grade = responseText

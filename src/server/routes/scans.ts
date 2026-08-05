@@ -12,6 +12,27 @@ import { onScanProgress } from "../services/scanProgress.js";
 import { safeJsonParse, asyncHandler } from "../utils/helpers.js";
 import { OWASP_NAMES } from "../config/constants.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
+import { estimateScan } from "../services/scanEstimate.js";
+import {
+  assertTargetAuthorized,
+  BlockedTargetError,
+  UnauthorizedTargetError,
+} from "../utils/urlValidation.js";
+
+/** Resolve a preset/custom plugin selection to a concrete id list, or an error. */
+function resolvePluginSelection(
+  preset: string | undefined,
+  customPlugins: string[] | undefined
+): { pluginIds: string[] } | { error: string } {
+  if (preset && PRESETS[preset]) return { pluginIds: PRESETS[preset].plugins };
+  if (customPlugins && customPlugins.length > 0) {
+    const validIds = new Set(PLUGINS.map((p) => p.id));
+    const invalid = customPlugins.filter((id) => !validIds.has(id));
+    if (invalid.length > 0) return { error: `Unknown plugin IDs: ${invalid.join(", ")}` };
+    return { pluginIds: customPlugins };
+  }
+  return { error: "Either preset or plugins array is required" };
+}
 
 export const scansRouter = Router();
 scansRouter.use(apiLimiter);
@@ -29,6 +50,25 @@ const CreateScanSchema = z.object({
 // ─── GET /api/scans/catalog ───────────────────────────────────────────────────
 scansRouter.get("/catalog", (_req, res) => {
   return res.json({ plugins: PLUGINS, presets: PRESETS });
+});
+
+// ─── GET /api/scans/estimate ──────────────────────────────────────────────────
+// Pre-run cost estimate so the UI can warn before an expensive scan. Accepts
+// `?preset=` or repeated `?plugins=` query params.
+scansRouter.get("/estimate", (req, res) => {
+  const preset = typeof req.query.preset === "string" ? req.query.preset : undefined;
+  const rawPlugins = req.query.plugins;
+  const customPlugins = Array.isArray(rawPlugins)
+    ? (rawPlugins as string[])
+    : typeof rawPlugins === "string"
+      ? rawPlugins.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+  const resolved = resolvePluginSelection(preset, customPlugins);
+  if ("error" in resolved) {
+    return res.status(400).json({ error: resolved.error });
+  }
+  return res.json(estimateScan(resolved.pluginIds));
 });
 
 // ─── GET /api/scans/stats ─────────────────────────────────────────────────────
@@ -157,7 +197,7 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
 
   // Verify project belongs to user
   const project = await getRow(db
-    .select({ id: projects.id })
+    .select({ id: projects.id, targetUrl: projects.targetUrl })
     .from(projects)
     .where(and(eq(projects.id, projectId), eq(projects.userId, req.user!.id)))
     );
@@ -166,20 +206,36 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
     return res.status(404).json({ error: "Project not found" });
   }
 
-  // Resolve plugin list
-  let pluginIds: string[];
-  if (preset && PRESETS[preset]) {
-    pluginIds = PRESETS[preset].plugins;
-  } else if (customPlugins && customPlugins.length > 0) {
-    // Validate all plugin IDs exist
-    const validIds = new Set(PLUGINS.map((p) => p.id));
-    const invalid = customPlugins.filter((id) => !validIds.has(id));
-    if (invalid.length > 0) {
-      return res.status(400).json({ error: `Unknown plugin IDs: ${invalid.join(", ")}` });
+  // Re-check target authorization at scan time (the allow-list may have changed
+  // since the project was created, and scanning is the sensitive action).
+  try {
+    assertTargetAuthorized(project.targetUrl);
+  } catch (err) {
+    if (err instanceof UnauthorizedTargetError || err instanceof BlockedTargetError) {
+      return res.status(403).json({ error: err.message });
     }
-    pluginIds = customPlugins;
-  } else {
-    return res.status(400).json({ error: "Either preset or plugins array is required" });
+    throw err;
+  }
+
+  // Resolve plugin list
+  const resolved = resolvePluginSelection(preset, customPlugins);
+  if ("error" in resolved) {
+    return res.status(400).json({ error: resolved.error });
+  }
+  const pluginIds = resolved.pluginIds;
+
+  // Enforce the cost ceiling: refuse scans whose estimated target-model call
+  // count exceeds SCAN_MAX_TARGET_CALLS, so an accidental "run everything"
+  // can't rack up a large bill or hammer the target.
+  const estimate = estimateScan(pluginIds);
+  if (estimate.exceedsLimit) {
+    return res.status(400).json({
+      error:
+        `This scan is estimated to make ~${estimate.targetCalls} target-model calls, ` +
+        `over the configured limit of ${estimate.maxTargetCalls} (SCAN_MAX_TARGET_CALLS). ` +
+        `Reduce the plugin selection or raise the limit.`,
+      estimate,
+    });
   }
 
   const now = new Date();
