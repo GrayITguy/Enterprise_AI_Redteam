@@ -8,6 +8,9 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ## [Unreleased]
 
+### Security
+- **Upgraded React Router to 8.3.0 to clear the RSC-mode CSRF advisory (GHSA-qwww-vcr4-c8h2).** The frontend was on `react-router-dom@7.18.2`, flagged high-severity by the advisory affecting `react-router` `>=7.12.0 <8.3.0`. The vulnerability **only affects apps using the unstable RSC (React Server Components) APIs** — EART uses standard `BrowserRouter` SPA routing, so it was not exploitable here — but the dependency was bumped to the patched **8.3.0** to clear the Dependabot alert. React Router v8 consolidated its packages (the `react-router-dom` package is discontinued; the last release is 7.18.2), so this drops `react-router-dom` in favour of `react-router` and updates every import from `"react-router-dom"` to `"react-router"`. All APIs used (`BrowserRouter`, `Routes`, `Route`, `Navigate`, `Outlet`, `Link`, `useNavigate`, `useParams`, `useLocation`, `useSearchParams`, `MemoryRouter`) are unchanged in v8; type-check, tests, and build all pass. `npm audit` on the frontend is now clean (0 vulnerabilities).
+
 ### Fixed
 - **Ollama scans no longer hang when no browser relay is connected.** When the EART server can't reach an Ollama target directly, promptfoo attacks fall back to the browser relay. If no dashboard was connected to forward them, every prompt blocked for the full Ollama timeout (up to 15 min each), leaving the scan stuck at "running" with no feedback. The relay now tracks whether a browser is actively polling and fails the scan fast (in seconds) with an actionable message — "Ollama is not reachable from the server, and no browser is connected to relay prompts to it; open the dashboard in a browser that can reach it, or run EART where it can reach Ollama directly."
 
