@@ -9,6 +9,7 @@
  * Feature-flagged: routes only activate when the SAML_* env vars are set.
  */
 import { SAML } from "@node-saml/node-saml";
+import { normalizeGroups } from "./roleMapping.js";
 
 export function isSamlEnabled(): boolean {
   return Boolean(
@@ -54,6 +55,7 @@ export interface SamlClaims {
   email: string;
   name?: string;
   nameId?: string;
+  groups: string[];
 }
 
 const EMAIL_ATTRS = [
@@ -97,10 +99,16 @@ export async function validateSamlResponse(samlResponse: string): Promise<SamlCl
     if (!domains.includes(domain)) throw new Error(`SAML email domain '${domain}' is not permitted`);
   }
 
+  const p = profile as Record<string, unknown>;
+  const groupsAttr = process.env.SAML_GROUPS_ATTRIBUTE ?? "groups";
+  const attrs = (p.attributes as Record<string, unknown> | undefined) ?? {};
+  const groups = normalizeGroups(p[groupsAttr] ?? attrs[groupsAttr]);
+
   return {
     email,
-    name: (profile as Record<string, unknown>).displayName as string | undefined,
-    nameId: (profile as Record<string, unknown>).nameID as string | undefined,
+    name: p.displayName as string | undefined,
+    nameId: p.nameID as string | undefined,
+    groups,
   };
 }
 

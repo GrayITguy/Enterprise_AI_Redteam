@@ -24,6 +24,7 @@ import {
   samlMetadata,
   samlDefaultRole,
 } from "../services/saml.js";
+import { resolveRoleFromGroups } from "../services/roleMapping.js";
 
 export const authRouter = Router();
 authRouter.use(authLimiter);
@@ -258,7 +259,7 @@ authRouter.get("/oidc/callback", async (req, res) => {
 
   try {
     const claims = await handleCallback(code, state);
-    const outcome = await resolveOrProvisionSsoUser(claims.email, "oidc", defaultRole(), req);
+    const outcome = await resolveOrProvisionSsoUser(claims.email, "oidc", defaultRole(), claims.groups, req);
     if (!outcome.ok) return fail("account_deactivated");
     const token = generateToken(outcome.resolved);
     // Hand the token to the SPA, which stores it and completes login.
@@ -295,7 +296,7 @@ authRouter.post("/saml/callback", async (req, res) => {
 
   try {
     const claims = await validateSamlResponse(samlResponse);
-    const outcome = await resolveOrProvisionSsoUser(claims.email, "saml", samlDefaultRole(), req);
+    const outcome = await resolveOrProvisionSsoUser(claims.email, "saml", samlDefaultRole(), claims.groups, req);
     if (!outcome.ok) return fail("account_deactivated");
     const token = generateToken(outcome.resolved);
     return res.redirect(`${appUrl}/login?sso_token=${encodeURIComponent(token)}`);
@@ -328,25 +329,40 @@ type SsoResolveResult = SsoResolveOk | { ok: false; reason: "inactive" };
 async function resolveOrProvisionSsoUser(
   email: string,
   provider: "oidc" | "saml",
-  role: "admin" | "analyst" | "viewer",
+  defaultRole: "admin" | "analyst" | "viewer",
+  groups: string[],
   req: import("express").Request
 ): Promise<SsoResolveResult> {
+  // Role resolved from IdP groups (null when no mapping is configured or no
+  // group matched). When present it drives provisioning AND per-login sync.
+  const mappedRole = resolveRoleFromGroups(groups);
+  const provisionRole = mappedRole ?? defaultRole;
+
   const existing = await getRow(db.select().from(users).where(eq(users.email, email)));
   if (existing) {
     if (!existing.isActive) {
       void audit({ action: "auth.sso_deactivated", userId: existing.id, userEmail: existing.email, detail: { provider }, ip: clientIp(req) });
       return { ok: false, reason: "inactive" };
     }
-    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
+    // Sync role from the IdP on each login, but only when a group actually
+    // mapped — never clobber a manually-set role for a user with no mapped group.
+    let role = existing.role;
+    const patch: Record<string, unknown> = { lastLoginAt: new Date() };
+    if (mappedRole && mappedRole !== existing.role) {
+      patch.role = mappedRole;
+      role = mappedRole;
+      void audit({ action: "auth.sso_role_sync", userId: existing.id, userEmail: existing.email, targetType: "user", targetId: existing.id, detail: { provider, from: existing.role, to: mappedRole }, ip: clientIp(req) });
+    }
+    await db.update(users).set(patch).where(eq(users.id, existing.id));
     void audit({ action: "auth.sso_login", userId: existing.id, userEmail: existing.email, targetType: "user", targetId: existing.id, detail: { provider }, ip: clientIp(req) });
-    return { ok: true, resolved: { id: existing.id, email: existing.email, role: existing.role } };
+    return { ok: true, resolved: { id: existing.id, email: existing.email, role } };
   }
   const now = new Date();
   const newUser = {
     id: uuid(),
     email,
     passwordHash: `sso:${provider}:no-password`,
-    role,
+    role: provisionRole,
     inviteCode: null,
     isActive: true,
     externalId: null,
@@ -354,7 +370,7 @@ async function resolveOrProvisionSsoUser(
     lastLoginAt: now,
   };
   await db.insert(users).values(newUser);
-  void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { provider, role }, ip: clientIp(req) });
+  void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { provider, role: provisionRole, viaGroups: mappedRole !== null }, ip: clientIp(req) });
   void audit({ action: "auth.sso_login", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { provider }, ip: clientIp(req) });
   return { ok: true, resolved: { id: newUser.id, email: newUser.email, role: newUser.role } };
 }
