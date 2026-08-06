@@ -25,6 +25,7 @@ import {
   samlDefaultRole,
 } from "../services/saml.js";
 import { resolveRoleFromGroups } from "../services/roleMapping.js";
+import { resolveEffectivePermissions } from "../services/permissionService.js";
 
 export const authRouter = Router();
 authRouter.use(authLimiter);
@@ -204,9 +205,10 @@ authRouter.post("/login", async (req, res) => {
       ip: clientIp(req),
     });
 
+    const permissions = await resolveEffectivePermissions({ role: user.role, customRoleId: user.customRoleId });
     return res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role },
+      user: { id: user.id, email: user.email, role: user.role, customRoleId: user.customRoleId, permissions },
     });
   } catch (err) {
     return res.status(500).json({ error: "Login failed" });
@@ -214,8 +216,16 @@ authRouter.post("/login", async (req, res) => {
 });
 
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
-authRouter.get("/me", requireAuth, (req: AuthenticatedRequest, res) => {
-  return res.json(req.user);
+authRouter.get("/me", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const permissions = await resolveEffectivePermissions({
+      role: req.user!.role,
+      customRoleId: req.user!.customRoleId,
+    });
+    return res.json({ ...req.user, permissions });
+  } catch {
+    return res.json({ ...req.user, permissions: [] });
+  }
 });
 
 // ─── OIDC SSO ─────────────────────────────────────────────────────────────────

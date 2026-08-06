@@ -59,8 +59,30 @@ export interface ManagedUser {
   id: string;
   email: string;
   role: Role;
+  customRoleId: string | null;
   createdAt: string;
   lastLoginAt: string | null;
+}
+
+// ─── Custom roles / fine-grained permissions ────────────────────────────────
+export interface PermissionDef {
+  id: string;
+  category: string;
+  description: string;
+}
+
+export interface CustomRole {
+  id: string;
+  name: string;
+  description: string | null;
+  permissions: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PermissionCatalog {
+  permissions: PermissionDef[];
+  builtinRoles: Record<Role, string[]>;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────

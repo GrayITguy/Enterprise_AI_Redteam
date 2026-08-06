@@ -7,6 +7,8 @@ import type {
   InviteResponse,
   ManagedUser,
   Role,
+  CustomRole,
+  PermissionCatalog,
 } from "@/types/api";
 import { apiErrorMessage } from "@/types/api";
 import { useAuthStore } from "@/store/authStore";
@@ -26,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import {
   Users, Copy, CheckCircle, Plus, Mail, Send, Sparkles,
-  Save, AlertCircle, Info, RefreshCw, Wifi, WifiOff, Trash2,
+  Save, AlertCircle, Info, RefreshCw, Wifi, WifiOff, Trash2, ShieldCheck,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -135,6 +137,9 @@ export default function Settings() {
 
       {/* User management (admin only) */}
       {user?.role === "admin" && <UserManagement />}
+
+      {/* Custom roles (admin only) */}
+      {user?.role === "admin" && <CustomRoleManagement />}
 
       {/* SMTP Settings (admin only) */}
       {user?.role === "admin" && <SmtpSettings />}
@@ -721,6 +726,11 @@ function UserManagement() {
     queryFn: () => api.get("/users").then((r) => r.data as ManagedUser[]),
   });
 
+  const { data: customRoles = [] } = useQuery({
+    queryKey: ["custom-roles"],
+    queryFn: () => api.get("/roles").then((r) => r.data as CustomRole[]),
+  });
+
   const roleMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: Role }) =>
       api.patch(`/users/${id}`, { role }),
@@ -729,6 +739,17 @@ function UserManagement() {
       queryClient.invalidateQueries({ queryKey: ["users"] });
     },
     onError: (err) => setError(apiErrorMessage(err) ?? "Failed to update role"),
+  });
+
+  // customRoleId "" (the "None" option) clears the assignment (sent as null).
+  const customRoleMutation = useMutation({
+    mutationFn: ({ id, customRoleId }: { id: string; customRoleId: string }) =>
+      api.patch(`/users/${id}`, { customRoleId: customRoleId || null }),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err) => setError(apiErrorMessage(err) ?? "Failed to update custom role"),
   });
 
   const deleteMutation = useMutation({
@@ -791,6 +812,25 @@ function UserManagement() {
                         <SelectItem value="viewer">Viewer</SelectItem>
                       </SelectContent>
                     </Select>
+                    {customRoles.length > 0 && (
+                      <Select
+                        value={u.customRoleId ?? "__none__"}
+                        onValueChange={(v) =>
+                          customRoleMutation.mutate({ id: u.id, customRoleId: v === "__none__" ? "" : v })
+                        }
+                        disabled={customRoleMutation.isPending}
+                      >
+                        <SelectTrigger className="h-8 w-36 text-xs" title="Custom role (extra permissions)">
+                          <SelectValue placeholder="No custom role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">No custom role</SelectItem>
+                          {customRoles.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -812,6 +852,193 @@ function UserManagement() {
             })}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Custom Role Management Card (admin only) ───────────────────────────────
+
+function CustomRoleManagement() {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const { data: catalog } = useQuery({
+    queryKey: ["permission-catalog"],
+    queryFn: () => api.get("/roles/permissions").then((r) => r.data as PermissionCatalog),
+  });
+  const { data: roles = [], isLoading } = useQuery({
+    queryKey: ["custom-roles"],
+    queryFn: () => api.get("/roles").then((r) => r.data as CustomRole[]),
+  });
+
+  const resetForm = () => {
+    setName("");
+    setDescription("");
+    setSelected(new Set());
+  };
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.post("/roles", {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        permissions: [...selected],
+      }),
+    onSuccess: () => {
+      setError(null);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
+    },
+    onError: (err) => setError(apiErrorMessage(err) ?? "Failed to create role"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/roles/${id}`),
+    onSuccess: () => {
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ["custom-roles"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+    onError: (err) => setError(apiErrorMessage(err) ?? "Failed to delete role"),
+  });
+
+  const togglePerm = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Group the catalog by category for display.
+  const grouped = (catalog?.permissions ?? []).reduce<Record<string, PermissionCatalog["permissions"]>>(
+    (acc, p) => {
+      (acc[p.category] ??= []).push(p);
+      return acc;
+    },
+    {}
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldCheck className="h-4 w-4" />
+          Custom Roles
+        </CardTitle>
+        <CardDescription>
+          Define named permission sets that grant capabilities on top of a user's base tier
+          (viewer / analyst / admin). A base tier is the floor — a custom role only adds access.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Existing roles */}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading roles…</p>
+        ) : roles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No custom roles yet.</p>
+        ) : (
+          <div className="divide-y rounded-md border">
+            {roles.map((r) => (
+              <div key={r.id} className="flex items-start justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{r.name}</p>
+                  {r.description && (
+                    <p className="text-xs text-muted-foreground">{r.description}</p>
+                  )}
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {r.permissions.map((p) => (
+                      <Badge key={p} variant="secondary" className="text-[10px]">{p}</Badge>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-destructive hover:text-destructive"
+                  disabled={deleteMutation.isPending}
+                  aria-label={`Delete role ${r.name}`}
+                  onClick={() => {
+                    if (confirm(`Delete role "${r.name}"? It will be removed from any assigned users.`)) {
+                      deleteMutation.mutate(r.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Create a new role */}
+        <div className="space-y-3 rounded-md border p-3">
+          <p className="text-sm font-medium">New custom role</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="role-name">Name</Label>
+              <Input
+                id="role-name"
+                placeholder="e.g. Scan Operator"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="role-desc">Description (optional)</Label>
+              <Input
+                id="role-desc"
+                placeholder="What this role is for"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Permissions</Label>
+            {Object.entries(grouped).map(([category, perms]) => (
+              <div key={category} className="rounded-md border p-2">
+                <p className="mb-1 text-xs font-semibold uppercase text-muted-foreground">{category}</p>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {perms.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 accent-primary"
+                        checked={selected.has(p.id)}
+                        onChange={() => togglePerm(p.id)}
+                      />
+                      <span className="font-mono">{p.id}</span>
+                      <span className="truncate text-muted-foreground">— {p.description}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <Button
+            size="sm"
+            disabled={!name.trim() || selected.size === 0 || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Create role
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

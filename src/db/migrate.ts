@@ -140,6 +140,16 @@ function applySchemaDirectly(): void {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS custom_roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      permissions TEXT NOT NULL DEFAULT '[]',
+      created_by TEXT REFERENCES users(id),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
@@ -158,6 +168,7 @@ function applySchemaDirectly(): void {
     "ALTER TABLE scans ADD COLUMN run_metadata TEXT",
     "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE users ADD COLUMN external_id TEXT",
+    "ALTER TABLE users ADD COLUMN custom_role_id TEXT",
   ];
   for (const stmt of alterStmts) {
     try { sqlite.exec(stmt); } catch { /* column already exists */ }
@@ -271,6 +282,16 @@ async function applyPostgresSchema(): Promise<void> {
       detail TEXT,
       ip TEXT,
       created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      permissions TEXT NOT NULL DEFAULT '[]',
+      created_by TEXT REFERENCES users(id),
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
