@@ -174,6 +174,11 @@ authRouter.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
+    if (!user.isActive) {
+      void audit({ action: "auth.login_deactivated", userId: user.id, userEmail: email, ip: clientIp(req) });
+      return res.status(403).json({ error: "This account has been deactivated" });
+    }
+
     // Update last login
     await db
       .update(users)
@@ -258,6 +263,10 @@ authRouter.get("/oidc/callback", async (req, res) => {
       resolved = { id: newUser.id, email: newUser.email, role: newUser.role };
       void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { role: newUser.role }, ip: clientIp(req) });
     } else {
+      if (!existing.isActive) {
+        void audit({ action: "auth.sso_deactivated", userId: existing.id, userEmail: existing.email, ip: clientIp(req) });
+        return fail("account_deactivated");
+      }
       await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
       resolved = { id: existing.id, email: existing.email, role: existing.role };
     }

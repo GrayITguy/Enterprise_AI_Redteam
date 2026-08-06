@@ -11,6 +11,10 @@ export const users = sqliteTable("users", {
     .default("analyst")
     .notNull(),
   inviteCode: text("invite_code"),
+  /** SCIM/admin deactivation flag — inactive users cannot obtain new tokens. */
+  isActive: integer("is_active", { mode: "boolean" }).default(true).notNull(),
+  /** External IdP id when the user was provisioned via SCIM. */
+  externalId: text("external_id"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
 });

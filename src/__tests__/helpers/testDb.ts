@@ -15,6 +15,8 @@ const CREATE_SCHEMA_SQL = `
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'analyst' CHECK(role IN ('admin','analyst','viewer')),
     invite_code TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    external_id TEXT,
     created_at INTEGER NOT NULL,
     last_login_at INTEGER
   );
