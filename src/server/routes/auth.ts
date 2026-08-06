@@ -17,6 +17,13 @@ import {
   defaultRole,
   errorMessage,
 } from "../services/oidc.js";
+import {
+  isSamlEnabled,
+  buildSamlLoginUrl,
+  validateSamlResponse,
+  samlMetadata,
+  samlDefaultRole,
+} from "../services/saml.js";
 
 export const authRouter = Router();
 authRouter.use(authLimiter);
@@ -212,9 +219,17 @@ authRouter.get("/me", requireAuth, (req: AuthenticatedRequest, res) => {
 
 // ─── OIDC SSO ─────────────────────────────────────────────────────────────────
 
-// Public status so the login page can show a "Sign in with SSO" button.
+// Public status so the login page can show the right "Sign in with SSO" button.
 authRouter.get("/sso/status", (_req, res) => {
-  return res.json(ssoStatus());
+  const oidc = ssoStatus();
+  const saml = isSamlEnabled();
+  return res.json({
+    // Back-compat: top-level `enabled`/`loginUrl` reflect OIDC.
+    ...oidc,
+    oidc,
+    saml: { enabled: saml, loginUrl: saml ? "/api/auth/saml/login" : null, metadataUrl: saml ? "/api/auth/saml/metadata" : null },
+    anyEnabled: oidc.enabled || saml,
+  });
 });
 
 // Kick off the OIDC authorization-code flow.
@@ -243,44 +258,106 @@ authRouter.get("/oidc/callback", async (req, res) => {
 
   try {
     const claims = await handleCallback(code, state);
-
-    // Find-or-create the SSO user. SSO users get a non-usable password hash so
-    // they can never authenticate via the password endpoint.
-    const existing = await getRow(db.select().from(users).where(eq(users.email, claims.email)));
-    let resolved: { id: string; email: string; role: "admin" | "analyst" | "viewer" };
-    if (!existing) {
-      const now = new Date();
-      const newUser = {
-        id: uuid(),
-        email: claims.email,
-        passwordHash: "sso:oidc:no-password",
-        role: defaultRole(),
-        inviteCode: null,
-        createdAt: now,
-        lastLoginAt: now,
-      };
-      await db.insert(users).values(newUser);
-      resolved = { id: newUser.id, email: newUser.email, role: newUser.role };
-      void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { role: newUser.role }, ip: clientIp(req) });
-    } else {
-      if (!existing.isActive) {
-        void audit({ action: "auth.sso_deactivated", userId: existing.id, userEmail: existing.email, ip: clientIp(req) });
-        return fail("account_deactivated");
-      }
-      await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
-      resolved = { id: existing.id, email: existing.email, role: existing.role };
-    }
-
-    void audit({ action: "auth.sso_login", userId: resolved.id, userEmail: resolved.email, targetType: "user", targetId: resolved.id, ip: clientIp(req) });
-    const token = generateToken(resolved);
+    const outcome = await resolveOrProvisionSsoUser(claims.email, "oidc", defaultRole(), req);
+    if (!outcome.ok) return fail("account_deactivated");
+    const token = generateToken(outcome.resolved);
     // Hand the token to the SPA, which stores it and completes login.
     return res.redirect(`${appUrl}/login?sso_token=${encodeURIComponent(token)}`);
   } catch (err) {
     logger.warn(`[OIDC] callback rejected: ${errorMessage(err)}`);
-    void audit({ action: "auth.sso_failed", ip: clientIp(req), detail: { reason: errorMessage(err) } });
+    void audit({ action: "auth.sso_failed", ip: clientIp(req), detail: { provider: "oidc", reason: errorMessage(err) } });
     return fail("sso_verification_failed");
   }
 });
+
+// ─── SAML 2.0 SSO ─────────────────────────────────────────────────────────────
+
+// SP-initiated login: redirect the browser to the IdP.
+authRouter.get("/saml/login", async (_req, res) => {
+  if (!isSamlEnabled()) return res.status(404).json({ error: "SAML SSO is not configured" });
+  try {
+    const url = await buildSamlLoginUrl();
+    return res.redirect(url);
+  } catch (err) {
+    logger.error(`[SAML] login failed: ${errorMessage(err)}`);
+    return res.status(502).json({ error: "SAML provider is unavailable" });
+  }
+});
+
+// Assertion Consumer Service (ACS): the IdP POSTs the signed SAML response here.
+authRouter.post("/saml/callback", async (req, res) => {
+  if (!isSamlEnabled()) return res.status(404).json({ error: "SAML SSO is not configured" });
+  const appUrl = (process.env.APP_URL ?? "http://localhost:15500").replace(/\/+$/, "");
+  const fail = (msg: string) => res.redirect(`${appUrl}/login?sso_error=${encodeURIComponent(msg)}`);
+
+  const samlResponse = typeof req.body?.SAMLResponse === "string" ? req.body.SAMLResponse : null;
+  if (!samlResponse) return fail("missing_saml_response");
+
+  try {
+    const claims = await validateSamlResponse(samlResponse);
+    const outcome = await resolveOrProvisionSsoUser(claims.email, "saml", samlDefaultRole(), req);
+    if (!outcome.ok) return fail("account_deactivated");
+    const token = generateToken(outcome.resolved);
+    return res.redirect(`${appUrl}/login?sso_token=${encodeURIComponent(token)}`);
+  } catch (err) {
+    logger.warn(`[SAML] callback rejected: ${errorMessage(err)}`);
+    void audit({ action: "auth.sso_failed", ip: clientIp(req), detail: { provider: "saml", reason: errorMessage(err) } });
+    return fail("sso_verification_failed");
+  }
+});
+
+// SP metadata XML for registering EART with the IdP.
+authRouter.get("/saml/metadata", (_req, res) => {
+  if (!isSamlEnabled()) return res.status(404).json({ error: "SAML SSO is not configured" });
+  res.type("application/xml").send(samlMetadata());
+});
+
+// ─── Shared SSO user resolution ───────────────────────────────────────────────
+
+interface SsoResolveOk {
+  ok: true;
+  resolved: { id: string; email: string; role: "admin" | "analyst" | "viewer" };
+}
+type SsoResolveResult = SsoResolveOk | { ok: false; reason: "inactive" };
+
+/**
+ * Find-or-create the SSO user (shared by OIDC + SAML). Provisioned users get a
+ * non-usable password hash so they can never authenticate via the password
+ * endpoint. Deactivated (SCIM-disabled) users are refused. Audit-logged.
+ */
+async function resolveOrProvisionSsoUser(
+  email: string,
+  provider: "oidc" | "saml",
+  role: "admin" | "analyst" | "viewer",
+  req: import("express").Request
+): Promise<SsoResolveResult> {
+  const existing = await getRow(db.select().from(users).where(eq(users.email, email)));
+  if (existing) {
+    if (!existing.isActive) {
+      void audit({ action: "auth.sso_deactivated", userId: existing.id, userEmail: existing.email, detail: { provider }, ip: clientIp(req) });
+      return { ok: false, reason: "inactive" };
+    }
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
+    void audit({ action: "auth.sso_login", userId: existing.id, userEmail: existing.email, targetType: "user", targetId: existing.id, detail: { provider }, ip: clientIp(req) });
+    return { ok: true, resolved: { id: existing.id, email: existing.email, role: existing.role } };
+  }
+  const now = new Date();
+  const newUser = {
+    id: uuid(),
+    email,
+    passwordHash: `sso:${provider}:no-password`,
+    role,
+    inviteCode: null,
+    isActive: true,
+    externalId: null,
+    createdAt: now,
+    lastLoginAt: now,
+  };
+  await db.insert(users).values(newUser);
+  void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { provider, role }, ip: clientIp(req) });
+  void audit({ action: "auth.sso_login", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { provider }, ip: clientIp(req) });
+  return { ok: true, resolved: { id: newUser.id, email: newUser.email, role: newUser.role } };
+}
 
 // ─── POST /api/auth/invite ────────────────────────────────────────────────────
 // Admin-only: create invite codes
