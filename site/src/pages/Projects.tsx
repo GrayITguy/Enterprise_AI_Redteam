@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Plus, Trash2, ExternalLink, Server, Globe, Brain, ChevronRight, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { formatDistanceToNow } from "date-fns";
 
 const PROVIDER_ICONS: Record<string, React.ElementType> = {

@@ -131,6 +131,46 @@ jobs:
           LIVE_SMOKE_TARGET_MODEL: ${{ vars.LIVE_SMOKE_TARGET_MODEL }}
           LIVE_SMOKE_TARGET_KEY: ${{ secrets.LIVE_SMOKE_TARGET_KEY }}
 
+  # ─── Dependency audit gate ─────────────────────────────────────────────────
+  # Fails the build on any HIGH or CRITICAL advisory in the *production*
+  # dependency tree (backend + frontend), so a shipped vulnerability like the
+  # React Router RSC-CSRF advisory (GHSA-qwww-vcr4-c8h2) is caught at PR time
+  # instead of only surfacing as an after-the-fact Dependabot alert. Dev-only
+  # advisories (build tooling that never reaches users) are reported but do NOT
+  # gate — they churn frequently and blocking on them would redden main for
+  # issues that don't ship. To also gate dev deps, drop `--omit=dev` below.
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Audit backend production dependencies (high+)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Install frontend dependencies
+        run: cd site && npm ci
+
+      - name: Audit frontend production dependencies (high+)
+        run: cd site && npm audit --omit=dev --audit-level=high
+
+      # Non-gating visibility into dev-dependency advisories (build tooling).
+      - name: Audit dev dependencies (informational, non-gating)
+        continue-on-error: true
+        run: |
+          echo "── backend (all deps, incl. dev) ──"
+          npm audit --audit-level=high || echo "::warning::backend has high+ advisories in dev dependencies"
+          echo "── frontend (all deps, incl. dev) ──"
+          cd site && npm audit --audit-level=high || echo "::warning::frontend has high+ advisories in dev dependencies"
+
   # ─── Build verification ────────────────────────────────────────────────────
   build:
     name: Build

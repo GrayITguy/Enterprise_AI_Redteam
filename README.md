@@ -10,7 +10,7 @@ EART consolidates four best-in-class open-source red-teaming tools — [Promptfo
 - **Self-hosted** — your data never leaves your infrastructure
 - **Air-gapped ready** — works with Ollama, no mandatory cloud calls
 - **One command install** — `bash scripts/install.sh` handles everything
-- **60 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
+- **82 vulnerability tests** — OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more
 
 <img width="815" height="395" alt="Dashboard" src="https://github.com/user-attachments/assets/c98fea31-9d4a-4346-93c2-4ef0bdd48bb1" />
 <img width="812" height="370" alt="Scan Builder" src="https://github.com/user-attachments/assets/9e79717f-41d8-4262-9be7-ede11e7b25e4" />
@@ -21,7 +21,7 @@ EART consolidates four best-in-class open-source red-teaming tools — [Promptfo
 
 ## Free & Open Source
 
-EART is **100% free and open source** under the MIT License — every feature, forever. Unlimited scans, all presets, all 60 plugins, clean PDF reports, email notifications, and the AI remediation engine are available to everyone with no license keys, tiers, or restrictions of any kind.
+EART is **100% free and open source** under the MIT License — every feature, forever. Unlimited scans, all presets, all 82 plugins, clean PDF reports, email notifications, and the AI remediation engine are available to everyone with no license keys, tiers, or restrictions of any kind.
 
 ---
 
@@ -82,7 +82,7 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 ## Features
 
 - **Dashboard** — severity charts, 30-scan pass-rate trend, upcoming scans widget, notification badge
-- **Scan Builder** — 60-plugin catalog with search and severity filters; Quick, OWASP, and Full presets; pre-flight connectivity check
+- **Scan Builder** — 82-plugin catalog with search and severity filters; Quick, OWASP, and Full presets; pre-flight connectivity check
 - **Scan Scheduler** — one-off or recurring scans (daily / weekly / monthly) with email notifications
 - **Results & AI Summary** — per-finding detail with prompt/response/evidence, OWASP radar chart, AI-generated executive summary
 - **Remediation Engine** — AI-generated remediation plans, risk scoring (0-100), root-cause analysis, copy-pasteable hardening configs, one-click verification re-scans — works fully offline via Ollama
@@ -90,6 +90,8 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 - **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` endpoints automatically bridged into Docker workers
 - **Reports** — PDF and JSON export per scan
 - **Team Access** — JWT auth with admin / analyst / viewer base tiers, invite-code registration, and **custom roles** that grant fine-grained permissions (e.g. `scan:create`, `audit:read`) on top of a base tier — managed from Settings
+- **Enterprise IAM (optional)** — OIDC and SAML 2.0 single sign-on, SCIM 2.0 user provisioning/deprovisioning, and IdP group → role mapping; all feature-flagged off until configured (see [`.env.example`](.env.example))
+- **Governance & compliance** — append-only audit log, pre-run scan cost estimate + hard call ceiling, target-authorization allow-list, per-target rate limiting, time-based data-retention purge + response minimization, and MITRE ATLAS / NIST AI RMF framework mappings on findings
 
 ---
 
@@ -99,7 +101,7 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 |--------|---------|----------|
 | Quick | 10 | Core vulnerabilities — prompt injection, jailbreaks, PII, toxicity |
 | OWASP | 22 | All 10 OWASP LLM Top 10 categories |
-| Full | 60 | Every plugin across Promptfoo, Garak, PyRIT, and DeepTeam |
+| Full | 82 | Every plugin across Promptfoo, Garak, PyRIT, and DeepTeam |
 
 ---
 
@@ -112,7 +114,7 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 | Database | SQLite (default) or PostgreSQL via Drizzle ORM |
 | Job Queue | BullMQ + Redis 8 |
 | AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
-| Python Workers | Garak 0.14+, PyRIT 0.11+, DeepTeam — Docker containers |
+| Python Workers | Garak 0.14+, PyRIT 0.14+, DeepTeam 1.0+ — Docker containers |
 | Auth | JWT + bcrypt; base tiers admin / analyst / viewer + custom roles with fine-grained permissions |
 
 ---
@@ -231,6 +233,8 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 | `PYRIT_IMAGE` | `eart-pyrit:latest` | PyRIT Docker image |
 | `DEEPTEAM_IMAGE` | `eart-deepteam:latest` | DeepTeam Docker image |
 
+> **Optional enterprise / governance variables** are documented in full in [`.env.example`](.env.example), grouped by area: OIDC (`OIDC_*`), SAML (`SAML_*`), SCIM (`SCIM_TOKEN`), group→role mapping (`SSO_GROUP_ROLE_MAP`, `OIDC_GROUPS_CLAIM`, `SAML_GROUPS_ATTRIBUTE`), data retention (`DATA_RETENTION_DAYS`, `AUDIT_RETENTION_DAYS`, `SCAN_STORE_RESPONSES`), scan governance (`SCAN_MAX_TARGET_CALLS`, `SCAN_TARGET_RATE_LIMIT`, `TARGET_ALLOWLIST`), the AI judge (`SCAN_JUDGE`), and engine tuning (`GARAK_PROMPT_CAP`, `PYRIT_*`, `DEEPTEAM_*`). All are off/safe by default.
+
 ---
 
 ## API Reference
@@ -241,8 +245,23 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 | POST | `/api/auth/setup` | First-run admin creation |
 | POST | `/api/auth/register` | Register with invite code |
 | POST | `/api/auth/login` | Login → JWT |
-| GET | `/api/auth/me` | Current user |
+| GET | `/api/auth/me` | Current user + effective permissions |
 | POST | `/api/auth/invite` | Generate invite code (admin) |
+| GET | `/api/auth/sso/status` | Which SSO methods (OIDC / SAML) are enabled |
+| GET | `/api/auth/oidc/login` · `/oidc/callback` | OIDC SSO (when configured) |
+| GET/POST | `/api/auth/saml/login` · `/saml/callback` · `/saml/metadata` | SAML 2.0 SSO (when configured) |
+
+### Users & Roles (admin)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/users` | List users |
+| PATCH | `/api/users/:id` | Change base role and/or assign a custom role (`{ role?, customRoleId? }`) |
+| DELETE | `/api/users/:id` | Delete a user (cascades their data; last-admin guarded) |
+| GET | `/api/roles/permissions` | Fine-grained permission catalog + built-in tier mappings |
+| GET · POST | `/api/roles` | List / create custom roles |
+| GET · PATCH · DELETE | `/api/roles/:id` | Read / update / delete a custom role |
+
+> SCIM 2.0 provisioning is served at `/scim/v2/*` (bearer-token auth via `SCIM_TOKEN`; 404 when unset).
 
 ### Projects
 | Method | Path | Description |
@@ -256,14 +275,17 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 ### Scans
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/scans/catalog` | Plugin catalog + presets |
+| GET | `/api/scans/catalog` | Plugin catalog + presets (with ATLAS/NIST mappings) |
+| GET | `/api/scans/estimate` | Pre-run upper-bound target-call estimate |
 | GET | `/api/scans/stats` | Aggregated severity stats |
 | GET | `/api/scans/history` | Last 30 scans (trend data) |
 | GET | `/api/scans/upcoming` | Scheduled & recurring scans |
 | GET | `/api/scans` | List all scans |
-| POST | `/api/scans` | Create + queue scan |
+| POST | `/api/scans` | Create + queue scan (refused if estimate exceeds `SCAN_MAX_TARGET_CALLS`) |
 | GET | `/api/scans/:id` | Scan status |
-| GET | `/api/scans/:id/results` | Scan findings |
+| GET | `/api/scans/:id/results` | Scan findings (paginated) |
+| GET | `/api/scans/:id/events` | Live progress stream (SSE) |
+| GET | `/api/scans/:id/diff` | Before/after comparison vs. an original scan |
 | POST | `/api/scans/:id/cancel` | Cancel running scan |
 
 ### Results
@@ -300,6 +322,13 @@ Visit **http://localhost:5173** — proxied to backend at :3000.
 |--------|------|-------------|
 | POST | `/api/connectivity/check` | Pre-flight endpoint reachability check |
 
+### Audit & Data Governance (admin)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/audit` | Read/filter the append-only audit log (requires the `audit:read` permission) |
+| GET | `/api/retention` | Active data-retention configuration |
+| POST | `/api/retention/purge` | Run a retention purge on demand |
+
 ## Testing
 
 ```bash
@@ -315,7 +344,7 @@ cd site && npm test
 npm run test:e2e
 ```
 
-CI runs type-check, tests, and build on every push/PR. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI runs type-check, backend/frontend/Python-worker tests, a production dependency-audit gate (`npm run audit:ci` — fails on high/critical advisories), a live-model smoke test (skips without secrets), and the build on every push/PR. The heavy Garak/PyRIT/DeepTeam Docker images build in a separate path-filtered [Worker Images](.github/workflows/worker-images.yml) workflow. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 

@@ -18,6 +18,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "smoke:live": "node scripts/live-smoke.mjs",
+    "audit:ci": "npm audit --omit=dev --audit-level=high && cd site && npm audit --omit=dev --audit-level=high",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
