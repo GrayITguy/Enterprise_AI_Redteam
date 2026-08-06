@@ -50,6 +50,8 @@ function applySchemaDirectly(): void {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'analyst' CHECK(role IN ('admin','analyst','viewer')),
       invite_code TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      external_id TEXT,
       created_at INTEGER NOT NULL,
       last_login_at INTEGER
     );
@@ -149,13 +151,15 @@ function applySchemaDirectly(): void {
     CREATE INDEX IF NOT EXISTS idx_reports_scan_id ON reports(scan_id);
   `);
   // Add new columns to existing tables (safe to run multiple times — errors are ignored)
-  const alterScans = [
+  const alterStmts = [
     "ALTER TABLE scans ADD COLUMN recurrence TEXT",
     "ALTER TABLE scans ADD COLUMN notify_on TEXT",
     "ALTER TABLE scans ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE scans ADD COLUMN run_metadata TEXT",
+    "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE users ADD COLUMN external_id TEXT",
   ];
-  for (const stmt of alterScans) {
+  for (const stmt of alterStmts) {
     try { sqlite.exec(stmt); } catch { /* column already exists */ }
   }
 
@@ -177,6 +181,8 @@ async function applyPostgresSchema(): Promise<void> {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'analyst' CHECK (role IN ('admin','analyst','viewer')),
       invite_code TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      external_id TEXT,
       created_at TIMESTAMPTZ NOT NULL,
       last_login_at TIMESTAMPTZ
     );
@@ -276,6 +282,11 @@ async function applyPostgresSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_scan_results_scan_id ON scan_results(scan_id);
     CREATE INDEX IF NOT EXISTS idx_scan_results_severity ON scan_results(severity);
     CREATE INDEX IF NOT EXISTS idx_reports_scan_id ON reports(scan_id);
+
+    -- Idempotent column adds for existing databases.
+    ALTER TABLE scans ADD COLUMN IF NOT EXISTS run_metadata TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;
   `);
 
   console.log("[DB] PostgreSQL schema applied");

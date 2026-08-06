@@ -15,6 +15,7 @@ import { connectivityRouter } from "./routes/connectivity.js";
 import { settingsRouter } from "./routes/settings.js";
 import { auditRouter } from "./routes/audit.js";
 import { retentionRouter } from "./routes/retention.js";
+import { scimRouter } from "./routes/scim.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
 import { logger } from "./utils/logger.js";
@@ -57,7 +58,8 @@ app.use(
 );
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: "10mb" }));
+// Accept application/scim+json (SCIM 2.0) in addition to application/json.
+app.use(express.json({ limit: "10mb", type: ["application/json", "application/scim+json", "application/*+json"] }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Request logging (dev) ────────────────────────────────────────────────────
@@ -97,6 +99,8 @@ app.use("/api/connectivity", connectivityRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/retention", retentionRouter);
+// SCIM 2.0 provisioning (bearer-token auth via SCIM_TOKEN, not JWT).
+app.use("/scim/v2", scimRouter);
 
 // ─── Serve React SPA in production ───────────────────────────────────────────
 if (process.env.NODE_ENV === "production") {

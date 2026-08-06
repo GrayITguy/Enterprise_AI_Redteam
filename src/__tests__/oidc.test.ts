@@ -104,6 +104,13 @@ describe("verifyIdToken", () => {
     expect(claims.email).toBe("user@corp.com");
     expect(claims.emailVerified).toBe(true);
     expect(claims.sub).toBe("sub-123");
+    expect(claims.groups).toEqual([]);
+  });
+
+  it("extracts the groups claim for role mapping", async () => {
+    mockFetch({});
+    const claims = await verifyIdToken(makeIdToken({ groups: ["EART-Admins", "Security"] }, "n1"), "n1");
+    expect(claims.groups).toEqual(["EART-Admins", "Security"]);
   });
 
   it("rejects a nonce mismatch (replay)", async () => {

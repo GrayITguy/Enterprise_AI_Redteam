@@ -20,6 +20,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { errorMessage } from "../utils/helpers.js";
 import { logger } from "../utils/logger.js";
+import { normalizeGroups } from "./roleMapping.js";
 
 /** Read the signing secret at call time (not module load) so it tracks env. */
 function jwtSecret(): string {
@@ -167,6 +168,7 @@ export interface OidcClaims {
   email: string;
   emailVerified: boolean;
   name?: string;
+  groups: string[];
 }
 
 /** Verify the ID token signature (JWKS) and standard claims, and the nonce. */
@@ -198,11 +200,13 @@ export async function verifyIdToken(idToken: string, expectedNonce: string): Pro
   const email = (payload.email as string | undefined)?.toLowerCase();
   if (!email) throw new Error("OIDC ID token has no email claim");
 
+  const groupsClaim = process.env.OIDC_GROUPS_CLAIM ?? "groups";
   return {
     sub: String(payload.sub),
     email,
     emailVerified: payload.email_verified === true || payload.email_verified === "true",
     name: (payload.name as string | undefined) ?? undefined,
+    groups: normalizeGroups(payload[groupsClaim]),
   };
 }
 

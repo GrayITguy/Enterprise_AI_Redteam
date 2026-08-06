@@ -22,6 +22,8 @@ export const users = pgTable("users", {
     .default("analyst")
     .notNull(),
   inviteCode: text("invite_code"),
+  isActive: boolean("is_active").default(true).notNull(),
+  externalId: text("external_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: "date" }),
 });
