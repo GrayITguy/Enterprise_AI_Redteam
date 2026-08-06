@@ -8,6 +8,15 @@ import { eq, and, isNull, gt } from "drizzle-orm";
 import { generateToken, requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { audit, clientIp } from "../services/auditService.js";
+import { logger } from "../utils/logger.js";
+import {
+  isOidcEnabled,
+  ssoStatus,
+  buildLoginRedirect,
+  handleCallback,
+  defaultRole,
+  errorMessage,
+} from "../services/oidc.js";
 
 export const authRouter = Router();
 authRouter.use(authLimiter);
@@ -194,6 +203,74 @@ authRouter.post("/login", async (req, res) => {
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
 authRouter.get("/me", requireAuth, (req: AuthenticatedRequest, res) => {
   return res.json(req.user);
+});
+
+// ─── OIDC SSO ─────────────────────────────────────────────────────────────────
+
+// Public status so the login page can show a "Sign in with SSO" button.
+authRouter.get("/sso/status", (_req, res) => {
+  return res.json(ssoStatus());
+});
+
+// Kick off the OIDC authorization-code flow.
+authRouter.get("/oidc/login", async (_req, res) => {
+  if (!isOidcEnabled()) return res.status(404).json({ error: "SSO is not configured" });
+  try {
+    const { url } = await buildLoginRedirect();
+    return res.redirect(url);
+  } catch (err) {
+    logger.error(`[OIDC] login failed: ${errorMessage(err)}`);
+    return res.status(502).json({ error: "SSO provider is unavailable" });
+  }
+});
+
+// OIDC redirect target: verify, provision, mint an EART token, hand off to the SPA.
+authRouter.get("/oidc/callback", async (req, res) => {
+  if (!isOidcEnabled()) return res.status(404).json({ error: "SSO is not configured" });
+
+  const appUrl = (process.env.APP_URL ?? "http://localhost:15500").replace(/\/+$/, "");
+  const fail = (msg: string) => res.redirect(`${appUrl}/login?sso_error=${encodeURIComponent(msg)}`);
+
+  const code = typeof req.query.code === "string" ? req.query.code : null;
+  const state = typeof req.query.state === "string" ? req.query.state : null;
+  if (req.query.error) return fail(String(req.query.error));
+  if (!code || !state) return fail("missing_code_or_state");
+
+  try {
+    const claims = await handleCallback(code, state);
+
+    // Find-or-create the SSO user. SSO users get a non-usable password hash so
+    // they can never authenticate via the password endpoint.
+    const existing = await getRow(db.select().from(users).where(eq(users.email, claims.email)));
+    let resolved: { id: string; email: string; role: "admin" | "analyst" | "viewer" };
+    if (!existing) {
+      const now = new Date();
+      const newUser = {
+        id: uuid(),
+        email: claims.email,
+        passwordHash: "sso:oidc:no-password",
+        role: defaultRole(),
+        inviteCode: null,
+        createdAt: now,
+        lastLoginAt: now,
+      };
+      await db.insert(users).values(newUser);
+      resolved = { id: newUser.id, email: newUser.email, role: newUser.role };
+      void audit({ action: "auth.sso_provision", userId: newUser.id, userEmail: newUser.email, targetType: "user", targetId: newUser.id, detail: { role: newUser.role }, ip: clientIp(req) });
+    } else {
+      await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
+      resolved = { id: existing.id, email: existing.email, role: existing.role };
+    }
+
+    void audit({ action: "auth.sso_login", userId: resolved.id, userEmail: resolved.email, targetType: "user", targetId: resolved.id, ip: clientIp(req) });
+    const token = generateToken(resolved);
+    // Hand the token to the SPA, which stores it and completes login.
+    return res.redirect(`${appUrl}/login?sso_token=${encodeURIComponent(token)}`);
+  } catch (err) {
+    logger.warn(`[OIDC] callback rejected: ${errorMessage(err)}`);
+    void audit({ action: "auth.sso_failed", ip: clientIp(req), detail: { reason: errorMessage(err) } });
+    return fail("sso_verification_failed");
+  }
 });
 
 // ─── POST /api/auth/invite ────────────────────────────────────────────────────

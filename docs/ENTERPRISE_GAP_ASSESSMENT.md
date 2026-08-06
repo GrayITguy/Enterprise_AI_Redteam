@@ -68,9 +68,9 @@ The AI judge and the DeepTeam/PyRIT scorers are only as good as the evaluator mo
 
 ### F. Enterprise IAM & compliance — 🟠 Impact · `XL` Effort · ◑ Confidence · **partially addressed**
 - **Audit log — ✅ done.** An append-only `audit_log` records logins (incl. failures), project/scan/user mutations with actor, target, IP and ms-timestamp; admin-readable/filterable at `GET /api/audit`. *Residual:* no SIEM/export pipeline or tamper-evidence (hash chaining) yet.
-- No SSO / SAML / OIDC / SCIM; auth is local JWT + 3 fixed roles (admin/analyst/viewer). **(still open — large)**
+- **OIDC SSO — ✅ done.** Standards-based OpenID Connect authorization-code login with real JWKS ID-token verification (Okta/Entra/Google/Auth0/Keycloak), domain allow-list, auto-provisioning, and audit-logged. *Residual:* **SAML** and **SCIM** provisioning are not yet supported (OIDC covers the common IdPs; SAML/SCIM are follow-ups), and roles are still the 3 fixed tiers (no IdP group→role mapping yet).
 - Secrets: API keys are encrypted at rest (✔ addressed earlier) but there's no KMS/Vault integration or rotation.
-- No data-residency, retention, or deletion controls for stored prompts/responses (which may contain sensitive target data).
+- **Data retention & minimization — ✅ done.** Time-based purge of scans/results/reports (`DATA_RETENTION_DAYS`) and audit log (`AUDIT_RETENTION_DAYS`) on a daily schedule + on-demand admin endpoint, and response minimization (`SCAN_STORE_RESPONSES=false`) to avoid persisting raw prompt/response text. *Residual:* no data-*residency* (region-pinning) controls, and no per-project retention overrides yet.
 - No documented threat model of EART itself, no third-party pentest, no SOC2/ISO evidence. **(external/organizational, not code)**
 
 ### G. Operational maturity — 🟡 Impact · `L` Effort · ◑ Confidence

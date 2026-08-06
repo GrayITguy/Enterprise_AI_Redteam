@@ -13,6 +13,7 @@ import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
 import { resolveEvalProviderDescriptor } from "./aiProvider.js";
 import { throttleTargetCall } from "./targetThrottle.js";
+import { shouldStoreResponses } from "./retentionService.js";
 import { getOllamaTimeoutMs } from "../utils/ollamaTimeout.js";
 import { publishProgress } from "./scanProgress.js";
 
@@ -224,6 +225,10 @@ export class ScanOrchestrator {
       };
 
       // Shared result persister — used by all tools
+      // Response minimization: when SCAN_STORE_RESPONSES=false, never persist the
+      // raw prompt/response text (it can contain sensitive target data) — keep
+      // only the verdict + metadata.
+      const storeText = shouldStoreResponses();
       const persistResult: ResultCallback = async (r) => {
         await db.insert(scanResults).values({
           id: uuid(),
@@ -233,8 +238,8 @@ export class ScanOrchestrator {
           severity: r.severity,
           testName: r.testName,
           owaspCategory: r.owaspCategory ?? null,
-          prompt: r.prompt ?? null,
-          response: r.response ?? null,
+          prompt: storeText ? (r.prompt ?? null) : null,
+          response: storeText ? (r.response ?? null) : null,
           passed: r.passed,
           evidence: r.evidence,
           createdAt: new Date(),

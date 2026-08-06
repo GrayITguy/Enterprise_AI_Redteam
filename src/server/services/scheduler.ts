@@ -4,6 +4,7 @@ import { scans } from "../../db/schema.js";
 import { and, eq, lte, isNotNull } from "drizzle-orm";
 import { scanQueue } from "./queue.js";
 import { logger } from "../utils/logger.js";
+import { purgeExpiredData, retentionConfig } from "./retentionService.js";
 
 /**
  * Starts a cron job that runs every 5 minutes.
@@ -46,5 +47,17 @@ export function startScheduler(): void {
     }
   });
 
-  logger.info("[Scheduler] Started — checking for scheduled scans every 5 minutes");
+  // Daily data-retention purge (03:15 UTC). No-op unless a retention window is
+  // configured; failures are logged but never crash the scheduler.
+  cron.schedule("15 3 * * *", async () => {
+    const cfg = retentionConfig();
+    if (cfg.dataRetentionDays === 0 && cfg.auditRetentionDays === 0) return;
+    try {
+      await purgeExpiredData();
+    } catch (err) {
+      logger.error(`[Retention] Daily purge failed: ${err}`);
+    }
+  });
+
+  logger.info("[Scheduler] Started — scheduled scans every 5 min, retention purge daily");
 }
