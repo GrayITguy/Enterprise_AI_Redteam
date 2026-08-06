@@ -17,8 +17,19 @@ const CREATE_SCHEMA_SQL = `
     invite_code TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
     external_id TEXT,
+    custom_role_id TEXT,
     created_at INTEGER NOT NULL,
     last_login_at INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS custom_roles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    permissions TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS invite_codes (
@@ -129,6 +140,7 @@ export function clearTestDb(): void {
     DELETE FROM invite_codes;
     DELETE FROM app_settings;
     DELETE FROM audit_log;
+    DELETE FROM custom_roles;
     DELETE FROM users;
   `);
 }

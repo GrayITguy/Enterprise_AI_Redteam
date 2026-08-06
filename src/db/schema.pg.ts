@@ -24,8 +24,20 @@ export const users = pgTable("users", {
   inviteCode: text("invite_code"),
   isActive: boolean("is_active").default(true).notNull(),
   externalId: text("external_id"),
+  customRoleId: text("custom_role_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true, mode: "date" }),
+});
+
+// ─── Custom roles ─────────────────────────────────────────────────────────────
+export const customRoles = pgTable("custom_roles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  permissions: text("permissions").notNull().default("[]"),
+  createdBy: text("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 });
 
 // ─── Invite codes ────────────────────────────────────────────────────────────

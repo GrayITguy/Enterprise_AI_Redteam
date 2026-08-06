@@ -15,7 +15,7 @@ export interface AuditEvent {
   action: string;
   userId?: string | null;
   userEmail?: string | null;
-  targetType?: "scan" | "project" | "user" | "settings" | null;
+  targetType?: "scan" | "project" | "user" | "settings" | "role" | null;
   targetId?: string | null;
   detail?: Record<string, unknown> | null;
   ip?: string | null;

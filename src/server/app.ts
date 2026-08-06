@@ -15,6 +15,7 @@ import { connectivityRouter } from "./routes/connectivity.js";
 import { settingsRouter } from "./routes/settings.js";
 import { auditRouter } from "./routes/audit.js";
 import { retentionRouter } from "./routes/retention.js";
+import { rolesRouter } from "./routes/roles.js";
 import { scimRouter } from "./routes/scim.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { runMigrations } from "../db/migrate.js";
@@ -99,6 +100,7 @@ app.use("/api/connectivity", connectivityRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/retention", retentionRouter);
+app.use("/api/roles", rolesRouter);
 // SCIM 2.0 provisioning (bearer-token auth via SCIM_TOKEN, not JWT).
 app.use("/scim/v2", scimRouter);
 

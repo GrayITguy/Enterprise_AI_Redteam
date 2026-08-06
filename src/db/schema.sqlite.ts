@@ -15,8 +15,25 @@ export const users = sqliteTable("users", {
   isActive: integer("is_active", { mode: "boolean" }).default(true).notNull(),
   /** External IdP id when the user was provisioned via SCIM. */
   externalId: text("external_id"),
+  /** Optional custom role granting extra fine-grained permissions on top of the
+   *  base tier. Null = base-tier permissions only. */
+  customRoleId: text("custom_role_id"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom roles — admin-defined named permission sets layered over the base tier.
+// ─────────────────────────────────────────────────────────────────────────────
+export const customRoles = sqliteTable("custom_roles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  /** JSON array of permission ids from the permission catalog. */
+  permissions: text("permissions").notNull().default("[]"),
+  createdBy: text("created_by").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

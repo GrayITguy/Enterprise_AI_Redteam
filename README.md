@@ -89,7 +89,7 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 - **Settings** — configure AI provider (Ollama, OpenAI, Anthropic, or custom endpoint with model auto-detection) and SMTP from the web UI
 - **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` endpoints automatically bridged into Docker workers
 - **Reports** — PDF and JSON export per scan
-- **Team Access** — JWT auth with admin / analyst / viewer roles and invite-code registration
+- **Team Access** — JWT auth with admin / analyst / viewer base tiers, invite-code registration, and **custom roles** that grant fine-grained permissions (e.g. `scan:create`, `audit:read`) on top of a base tier — managed from Settings
 
 ---
 
@@ -113,7 +113,7 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 | Job Queue | BullMQ + Redis 8 |
 | AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
 | Python Workers | Garak 0.14+, PyRIT 0.11+, DeepTeam — Docker containers |
-| Auth | JWT + bcrypt; roles: admin / analyst / viewer |
+| Auth | JWT + bcrypt; base tiers admin / analyst / viewer + custom roles with fine-grained permissions |
 
 ---
 

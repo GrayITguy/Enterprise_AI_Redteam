@@ -2,14 +2,16 @@ import { Router } from "express";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { db, getRow, getRows } from "../../db/index.js";
 import { auditLog } from "../../db/schema.js";
-import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
+import { requireAuth, requirePermission, type AuthenticatedRequest } from "../middleware/auth.js";
 import { asyncHandler, safeJsonParse } from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
 
 export const auditRouter = Router();
 auditRouter.use(apiLimiter);
 auditRouter.use(requireAuth);
-auditRouter.use(requireRole("admin")); // audit trail is admin-only
+// Admins hold `audit:read` by default; it can be delegated to another user via
+// a custom role without granting full admin.
+auditRouter.use(requirePermission("audit:read"));
 
 // ─── GET /api/audit ───────────────────────────────────────────────────────────
 // Paginated, newest-first. Optional filters: ?action=scan.create&userId=…

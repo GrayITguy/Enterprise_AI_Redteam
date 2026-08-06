@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { sql, eq, inArray } from "drizzle-orm";
 import { db, getRow, getRows, isPostgres } from "../../db/index.js";
-import { users, projects, scans, scanResults, reports, inviteCodes } from "../../db/schema.js";
+import { users, projects, scans, scanResults, reports, inviteCodes, customRoles } from "../../db/schema.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/helpers.js";
 import { apiLimiter } from "../middleware/rateLimiter.js";
@@ -18,11 +18,21 @@ const publicColumns = {
   id: users.id,
   email: users.email,
   role: users.role,
+  customRoleId: users.customRoleId,
   createdAt: users.createdAt,
   lastLoginAt: users.lastLoginAt,
 };
 
-const RoleSchema = z.object({ role: z.enum(["admin", "analyst", "viewer"]) });
+// PATCH accepts a base-tier change, a custom-role assignment, or both. At least
+// one field must be present. `customRoleId: null` clears the assignment.
+const UpdateSchema = z
+  .object({
+    role: z.enum(["admin", "analyst", "viewer"]).optional(),
+    customRoleId: z.string().min(1).nullable().optional(),
+  })
+  .refine((v) => v.role !== undefined || v.customRoleId !== undefined, {
+    message: "Provide a role and/or customRoleId",
+  });
 
 async function countAdmins(): Promise<number> {
   const row = await getRow(db
@@ -39,35 +49,57 @@ usersRouter.get("/", asyncHandler(async (_req, res) => {
   res.json(list);
 }));
 
-// ─── PATCH /api/users/:id  { role } ──────────────────────────────────────────
+// ─── PATCH /api/users/:id  { role?, customRoleId? } ──────────────────────────
 usersRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const parsed = RoleSchema.safeParse(req.body);
+  const parsed = UpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   }
 
   const target = await getRow(db
-    .select({ id: users.id, role: users.role })
+    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId })
     .from(users)
     .where(eq(users.id, req.params.id))
     );
   if (!target) return res.status(404).json({ error: "User not found" });
 
-  // Never leave the platform with zero admins.
-  if (target.role === "admin" && parsed.data.role !== "admin" && (await countAdmins()) <= 1) {
-    return res.status(409).json({ error: "Cannot change the role of the last remaining admin" });
+  const updates: Record<string, unknown> = {};
+  const detail: Record<string, unknown> = {};
+
+  if (parsed.data.role !== undefined && parsed.data.role !== target.role) {
+    // Never leave the platform with zero admins.
+    if (target.role === "admin" && parsed.data.role !== "admin" && (await countAdmins()) <= 1) {
+      return res.status(409).json({ error: "Cannot change the role of the last remaining admin" });
+    }
+    updates.role = parsed.data.role;
+    detail.role = { from: target.role, to: parsed.data.role };
   }
 
-  await db.update(users).set({ role: parsed.data.role }).where(eq(users.id, target.id));
-  void audit({
-    action: "user.role_change",
-    userId: req.user!.id,
-    userEmail: req.user!.email,
-    targetType: "user",
-    targetId: target.id,
-    detail: { from: target.role, to: parsed.data.role },
-    ip: clientIp(req),
-  });
+  if (parsed.data.customRoleId !== undefined) {
+    if (parsed.data.customRoleId !== null) {
+      const exists = await getRow(db
+        .select({ id: customRoles.id })
+        .from(customRoles)
+        .where(eq(customRoles.id, parsed.data.customRoleId))
+        );
+      if (!exists) return res.status(400).json({ error: "Unknown custom role" });
+    }
+    updates.customRoleId = parsed.data.customRoleId;
+    detail.customRole = { from: target.customRoleId, to: parsed.data.customRoleId };
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await db.update(users).set(updates).where(eq(users.id, target.id));
+    void audit({
+      action: "user.role_change",
+      userId: req.user!.id,
+      userEmail: req.user!.email,
+      targetType: "user",
+      targetId: target.id,
+      detail,
+      ip: clientIp(req),
+    });
+  }
   const updated = await getRow(db.select(publicColumns).from(users).where(eq(users.id, target.id)));
   return res.json(updated);
 }));
