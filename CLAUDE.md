@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-EART is a self-hosted AI security testing dashboard that unifies multiple red-teaming approaches (Promptfoo, Garak, PyRIT, DeepTeam) behind a single web interface. It provides 60 vulnerability tests covering OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more.
+EART is a self-hosted AI security testing dashboard that unifies multiple red-teaming approaches (Promptfoo, Garak, PyRIT, DeepTeam) behind a single web interface. It provides 82 vulnerability tests covering OWASP LLM Top 10, prompt injection, jailbreaks, PII extraction, and more.
 
 > **Engine reality (keep this honest in code and docs):** the **Garak**, **DeepTeam**, and **PyRIT** workers invoke real external engines — Garak always; DeepTeam and PyRIT when an independent evaluator LLM is configured (else they fall back to labelled heuristic probes, `mode: builtin-heuristic`). **Promptfoo** uses its real `evaluate` harness for cloud providers (OpenAI/Anthropic/Azure) and EART's own `PLUGIN_ATTACKS` library for the Ollama/custom paths; grading is regex plus an optional **AI judge** (`src/server/services/attackJudge.ts`) that re-checks regex "passes". All four engines are now real or honestly labelled. See README → "Which engines actually run."
 
@@ -17,7 +17,7 @@ EART is a self-hosted AI security testing dashboard that unifies multiple red-te
 | AI | Anthropic SDK (Claude Haiku); optional Ollama for local models |
 | Python Workers | Garak, PyRIT, DeepTeam — spawned as Docker containers |
 | Scheduling | node-cron (polls every 5 min for recurring scans) |
-| Auth | JWT (jsonwebtoken) + bcryptjs; roles: admin / analyst / viewer |
+| Auth | JWT (jsonwebtoken) + bcryptjs; base tiers admin / analyst / viewer + custom roles (fine-grained permissions); optional OIDC/SAML SSO + SCIM |
 
 ## Repository Layout
 
@@ -28,7 +28,8 @@ EART is a self-hosted AI security testing dashboard that unifies multiple red-te
 │   │   └── schema.ts           # Drizzle table definitions
 │   ├── server/
 │   │   ├── config/
-│   │   │   └── pluginCatalog.ts  # 60-plugin vulnerability catalog
+│   │   │   ├── pluginCatalog.ts  # 82-plugin vulnerability catalog
+│   │   │   └── permissions.ts    # fine-grained permission catalog + role maps
 │   │   ├── routes/             # Express route handlers
 │   │   ├── services/
 │   │   │   └── scheduler.ts    # Recurring scan orchestration
