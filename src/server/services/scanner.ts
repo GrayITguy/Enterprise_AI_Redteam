@@ -39,14 +39,17 @@ const PLUGIN_DISPLAY: Record<string, string> = {
 };
 
 function prepareAttackForSend(attack: AttackEntry) {
-  if (!attack.transforms || attack.transforms.length === 0) {
+  const globalTransforms = (globalThis as any).__currentScanTransforms || [];
+  const effectiveTransforms = (attack.transforms && attack.transforms.length > 0) ? attack.transforms : globalTransforms;
+  if (!effectiveTransforms || effectiveTransforms.length === 0) {
     return { ...attack, originalPrompt: attack.prompt };
   }
-  const sentPrompt = applyTransformsChain(attack.prompt, attack.transforms);
+  const sentPrompt = applyTransformsChain(attack.prompt, effectiveTransforms);
   return {
     ...attack,
     prompt: sentPrompt,
     originalPrompt: attack.prompt,
+    transforms: effectiveTransforms,
   };
 }
 
@@ -130,7 +133,7 @@ export class ScanOrchestrator {
     return abort.signal.aborted || (await this.isCancelled(scanId));
   }
 
-  async run(scanId: string, onProgress?: (progress: number) => void): Promise<void> {
+  async run(scanId: string, options: { transforms?: string[]; enableTargetProfile?: boolean; targetProfileMode?: "basic" | "advanced" } = {}, onProgress?: (progress: number) => void): Promise<void> {
     logger.info(`[Scanner] Starting scan ${scanId}`);
 
     const abort = new AbortController();
@@ -179,12 +182,22 @@ export class ScanOrchestrator {
       );
 
       const tools = Object.keys(byTool) as PluginTool[];
+
+      // Apply passed options for transforms and profile
+      const scanTransforms = options.transforms || [];
+      const enableProfile = options.enableTargetProfile || false;
+      const profileMode = options.targetProfileMode || "basic";
+
+      // Override prepare to use scan level transforms if provided
+      const originalPrepare = prepareAttackForSend;
+      // @ts-ignore
+      globalThis.__currentScanTransforms = scanTransforms;
       const providerConfig = safeJsonParse<Record<string, unknown>>(project.providerConfig, {});
 
       // Reproducibility: snapshot the config that determines this scan's results
       // (plugins, engine image tags, knob values, evaluator model — never any
       // secret) so a finding can be traced back to exactly how it was produced.
-      await this.persistRunMetadata(scanId, pluginIds, tools, project.providerType, !!(scan as any).enableTargetProfile);
+      await this.persistRunMetadata(scanId, pluginIds, tools, project.providerType, enableProfile);
 
       let completedTools = 0;
 

@@ -47,6 +47,9 @@ const CreateScanSchema = z.object({
   scheduledAt: z.string().datetime().optional(),
   recurrence: z.enum(["daily", "weekly", "monthly"]).nullable().optional(),
   notifyOn: z.enum(["always", "failure"]).nullable().optional(),
+  transforms: z.array(z.string()).optional(),
+  enableTargetProfile: z.boolean().optional(),
+  targetProfileMode: z.enum(["basic", "advanced"]).optional(),
 });
 
 // ─── GET /api/scans/catalog ───────────────────────────────────────────────────
@@ -199,7 +202,7 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
     return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
   }
 
-  const { projectId, preset, plugins: customPlugins, scheduledAt, recurrence, notifyOn } = parsed.data;
+  const { projectId, preset, plugins: customPlugins, scheduledAt, recurrence, notifyOn, transforms, enableTargetProfile, targetProfileMode } = parsed.data;
 
   // Verify project belongs to user
   const project = await getRow(db
@@ -269,7 +272,7 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
 
   // Enqueue for immediate execution (or let scheduler pick it up if scheduledAt is set)
   if (!scheduledAt) {
-    await scanQueue.add("run-scan", { scanId: newScan.id }, { jobId: newScan.id });
+    await scanQueue.add("run-scan", { scanId: newScan.id, transforms: transforms || [], enableTargetProfile: !!enableTargetProfile, targetProfileMode: targetProfileMode || "basic" }, { jobId: newScan.id });
   }
 
   void audit({
@@ -278,7 +281,7 @@ scansRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => {
     userEmail: req.user!.email,
     targetType: "scan",
     targetId: newScan.id,
-    detail: { projectId, preset: preset ?? null, pluginCount: pluginIds.length, estimatedTargetCalls: estimate.targetCalls, scheduled: Boolean(scheduledAt) },
+    detail: { projectId, preset: preset ?? null, pluginCount: pluginIds.length, estimatedTargetCalls: estimate.targetCalls, scheduled: Boolean(scheduledAt), transforms, enableTargetProfile, targetProfileMode },
     ip: clientIp(req),
   });
 
@@ -320,8 +323,64 @@ scansRouter.get("/:id", asyncHandler(async (req: AuthenticatedRequest, res) => {
 
   return res.json({
     ...scan,
-    plugins: safeJsonParse(scan.plugins, []),
+    plugins: safeJsonParse(scan.plugins || "[]", []),
   });
+}));
+
+
+// ─── GET /api/scans/:id/verify-claims (Reproducibility Export)
+scansRouter.get("/:id/verify-claims", asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const scanId = req.params.id;
+  if (!scanId) return res.status(400).json({ error: "Missing scan id" });
+  const scan = await getRow(db
+    .select({
+      id: scans.id,
+      projectId: scans.projectId,
+      status: scans.status,
+      preset: scans.preset,
+      plugins: scans.plugins,
+      runMetadata: scans.runMetadata,
+      completedAt: scans.completedAt,
+    })
+    .from(scans)
+    .where(and(eq(scans.id, scanId), eq(scans.userId, req.user!.id)))
+  );
+
+  if (!scan) {
+    return res.status(404).json({ error: "Scan not found" });
+  }
+
+  const results = await getRows(db
+    .select({
+      id: scanResults.id,
+      testName: scanResults.testName,
+      prompt: scanResults.prompt,
+      response: scanResults.response,
+      passed: scanResults.passed,
+      evidence: scanResults.evidence,
+      severity: scanResults.severity,
+    })
+    .from(scanResults)
+    .where(eq(scanResults.scanId, scanId))
+  );
+
+  const exportData = {
+    scanId: scan.id,
+    exportedAt: new Date().toISOString(),
+    status: scan.status,
+    preset: scan.preset,
+    plugins: safeJsonParse(scan.plugins, []),
+    runMetadata: safeJsonParse(scan.runMetadata || "{}", {}),
+    results: results.map(r => ({
+      ...r,
+      evidence: safeJsonParse(r.evidence, {}),
+      // Note: originalPrompt, appliedTransforms, sentPrompt, targetProfile are in evidence or runMetadata when using new features
+    })),
+    note: "Full chain for verifying claims: check evidence for originalPrompt/appliedTransforms/sentPrompt and runMetadata for targetProfile. Use to reproduce and audit findings.",
+    instructions: "Compare sentPrompt (transformed) vs original in evidence. Profile in runMetadata.",
+  };
+
+  return res.json(exportData);
 }));
 
 // ─── GET /api/scans/:id/results ───────────────────────────────────────────────

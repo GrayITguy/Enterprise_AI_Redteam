@@ -31,4 +31,7 @@ export const scanQueue = new Queue("scans", {
 
 export interface ScanJobData {
   scanId: string;
+  transforms?: string[];
+  enableTargetProfile?: boolean;
+  targetProfileMode?: "basic" | "advanced";
 }

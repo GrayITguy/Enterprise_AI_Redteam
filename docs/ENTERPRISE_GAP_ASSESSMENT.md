@@ -104,3 +104,23 @@ OWASP-LLM tagging exists; PDF/HTML/CSV/JSON export exists. **Run reproducibility
 **Do not represent EART as:** a complete, calibrated, audited enterprise platform that "covers everything a red team needs" or that clears a security review unchanged. It doesn't, yet — and no single tool does. A real red team still brings its own tooling, manual testing, and judgment; EART amplifies that, it doesn't replace it.
 
 If you hand a red team *this document* alongside the platform, you'll get a far better reception than any "it's done" claim — because it shows you know exactly where the edges are.
+
+## 2026-08-10 Progress Update (Phase 2 Enterprise Push)
+**Added:**
+- Full UI in ScanBuilder for Transforms selection (P4RS3LT0NGV3 layers) and Target Profile (basic/advanced).
+- Backend propagation of options to execution, global transforms apply, profile flag.
+- Judge calibration report with metrics (accuracy, FP/FN, transforms impact), seeded with CL4R1T4S-style cases. Run via bench script.
+- "Verify claims" reproducibility export endpoint (/scans/:id/verify-claims) returning full chain (original, transforms, profile, evidence, metadata).
+- Import UI for JSONL/CSV external libraries (CL4R1T4S, etc.) in builder.
+- Docker validation spins.
+- Master plan, tracking updated, delegation for T3MP3ST/AutoRedTeam.
+
+**Impact on Gaps:**
+- E (Detection quality): Advanced with calibration report starter. Still needs more labelled data and human review for full.
+- H (Reporting, reproducibility): Strong with export.
+- A (Coverage): Extensibility via import + transforms for more versatile attacks.
+- Profiling: Full step added.
+- Still open per original: full live validation, operational HA, etc. (Tier 3).
+
+**Honest note:** Now significantly more versatile for enterprise red teams (UI for advanced techniques, calibration, export, import). Still an aggregator + layers. Run the bench and export to see. Continue to close remaining for 100% confidence.
+

@@ -57,10 +57,10 @@ async function recoverStaleScans(): Promise<void> {
 const worker = new Worker<ScanJobData>(
   "scans",
   async (job) => {
-    const { scanId } = job.data;
+    const { scanId, transforms = [], enableTargetProfile = false, targetProfileMode = "basic" } = job.data;
     logger.info(`[Worker] Processing scan job ${job.id} for scan ${scanId}`);
 
-    await orchestrator.run(scanId, async (progress) => {
+    await orchestrator.run(scanId, { transforms, enableTargetProfile, targetProfileMode }, async (progress) => {
       await job.updateProgress(progress);
     });
   },

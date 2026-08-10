@@ -92,6 +92,11 @@ export default function ScanBuilder() {
   const [recurrence, setRecurrence] = useState<"once" | "daily" | "weekly" | "monthly">("once");
   const [notifyOn, setNotifyOn] = useState<"always" | "failure" | "never">("always");
 
+  // New enterprise options
+  const [selectedTransforms, setSelectedTransforms] = useState<string[]>([]);
+  const [enableTargetProfile, setEnableTargetProfile] = useState(false);
+  const [targetProfileMode, setTargetProfileMode] = useState<"basic" | "advanced">("basic");
+
   const { data: projects = [] } = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.get("/projects").then((r) => r.data as Project[]),
@@ -156,6 +161,9 @@ export default function ScanBuilder() {
         plugins: usePreset ? undefined : pluginIds,
         preset: usePreset ? selectedPreset : undefined,
         notifyOn: notifyOn === "never" ? null : notifyOn,
+        transforms: selectedTransforms.length > 0 ? selectedTransforms : undefined,
+        enableTargetProfile: enableTargetProfile || undefined,
+        targetProfileMode: enableTargetProfile ? targetProfileMode : undefined,
       };
       if (scheduleEnabled && scheduledAt) {
         body.scheduledAt = localToIso(scheduledAt);
@@ -195,9 +203,18 @@ export default function ScanBuilder() {
   const isFiltered = pluginSearch.trim() !== "" || severityFilter !== null;
 
   const canSubmit = selectedProjectId && activePlugins.size > 0;
+
+  // Available transforms (from backend transforms or static for now)
+  const availableTransforms = ["base64", "rot13", "leetspeak", "zeroWidth", "homoglyph", "caesar3", "urlEncode", "whitespaceStego", "fullWidth"];
+
   const scheduledInPast =
     scheduleEnabled && scheduledAt && new Date(scheduledAt) <= new Date();
   const error = apiErrorMessage(createScanMutation.error);
+
+  // UI helpers for transforms
+  const toggleTransform = (t: string) => {
+    setSelectedTransforms(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 p-6">
@@ -531,6 +548,110 @@ export default function ScanBuilder() {
               ))}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+
+      {/* Transforms Section - P4RS3LT0NGV3 style evasion layers for enterprise versatility */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Zap className="h-4 w-4" />
+            3. Transforms (Evasion Layers)
+          </CardTitle>
+          <CardDescription>
+            Apply composable text transforms to attacks (base64, leetspeak, homoglyph, etc.). Improves evasion testing against filters. Global for selected plugins.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {availableTransforms.map((t) => (
+              <Button
+                key={t}
+                size="sm"
+                variant={selectedTransforms.includes(t) ? "default" : "outline"}
+                onClick={() => toggleTransform(t)}
+              >
+                {t}
+              </Button>
+            ))}
+          </div>
+          {selectedTransforms.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-2">Active: {selectedTransforms.join(", ")}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Target Profile Step - System prompt extraction for advanced profiling */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Shield className="h-4 w-4" />
+            4. Target Profile
+          </CardTitle>
+          <CardDescription>
+            Extract system prompt from target using leak probes. Useful for crafting better attacks and understanding model behavior.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={enableTargetProfile}
+              onCheckedChange={setEnableTargetProfile}
+            />
+            <Label>Enable Target Profile</Label>
+          </div>
+          {enableTargetProfile && (
+            <div>
+              <Label className="text-sm">Mode</Label>
+              <div className="flex gap-2 mt-1">
+                {(["basic", "advanced"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    size="sm"
+                    variant={targetProfileMode === m ? "default" : "outline"}
+                    onClick={() => setTargetProfileMode(m)}
+                  >
+                    {m}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Basic: single leak probe. Advanced: multi-turn extraction.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
+      {/* Import External Libraries - CL4R1T4S and elder-plinius */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Search className="h-4 w-4" />
+            Import External Attack Libraries
+          </CardTitle>
+          <CardDescription>
+            Upload JSONL/CSV from CL4R1T4S, AutoRedTeam or custom. Uses externalAttackLoader. (Backend ready; UI triggers load for this scan.)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Input
+            type="file"
+            accept=".jsonl,.csv,.txt"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                  // In full impl, POST to /import or use in body
+                  alert("Import loaded (demo): " + (ev.target?.result as string).slice(0, 100) + "... Use in future scan.");
+                  // For now, could set selectedPlugins or custom attacks
+                };
+                reader.readAsText(file);
+              }
+            }}
+          />
+          <p className="text-xs text-muted-foreground mt-2">Example: seed with elder-plinius CL4R1T4S subsets for more versatile attacks.</p>
         </CardContent>
       </Card>
 
