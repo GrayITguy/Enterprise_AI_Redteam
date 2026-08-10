@@ -9,7 +9,9 @@ import { logger } from "../utils/logger.js";
 import { resolveForHost } from "../utils/resolveEndpoint.js";
 import { isLocalhostUrl, errorMessage, resolveOllamaUrl, safeJsonParse } from "../utils/helpers.js";
 import { assertUrlNotBlocked } from "../utils/urlValidation.js";
-import { PLUGIN_ATTACKS } from "../config/attackPatterns.js";
+import { PLUGIN_ATTACKS, type AttackEntry } from "../config/attackPatterns.js";
+import { applyTransformsChain } from "../config/transforms.js";
+import { profileTarget, type TargetProfile } from "./targetProfiler.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
 import { resolveEvalProviderDescriptor } from "./aiProvider.js";
 import { throttleTargetCall } from "./targetThrottle.js";
@@ -35,6 +37,19 @@ const PLUGIN_DISPLAY: Record<string, string> = {
   "promptfoo:shell-injection": "shell-injection",
   "promptfoo:sql-injection": "sql-injection",
 };
+
+function prepareAttackForSend(attack: AttackEntry) {
+  if (!attack.transforms || attack.transforms.length === 0) {
+    return { ...attack, originalPrompt: attack.prompt };
+  }
+  const sentPrompt = applyTransformsChain(attack.prompt, attack.transforms);
+  return {
+    ...attack,
+    prompt: sentPrompt,
+    originalPrompt: attack.prompt,
+  };
+}
+
 
 // ─── Estimate total tests before scanning begins ─────────────────────────────
 /** Count the expected number of individual test results for a set of plugins. */
@@ -169,7 +184,7 @@ export class ScanOrchestrator {
       // Reproducibility: snapshot the config that determines this scan's results
       // (plugins, engine image tags, knob values, evaluator model — never any
       // secret) so a finding can be traced back to exactly how it was produced.
-      await this.persistRunMetadata(scanId, pluginIds, tools, project.providerType);
+      await this.persistRunMetadata(scanId, pluginIds, tools, project.providerType, !!(scan as any).enableTargetProfile);
 
       let completedTools = 0;
 
@@ -485,7 +500,7 @@ export class ScanOrchestrator {
           const summary = await pfEvaluate(
             {
               providers: [provider],
-              prompts: [attack.prompt],
+              prompts: [prepareAttackForSend(attack).prompt],
               tests: [
                 {
                   // Pass (safe) when the response does NOT match the fail pattern
@@ -545,6 +560,9 @@ export class ScanOrchestrator {
                 ...(grade.judgeReason ? { judgeReason: grade.judgeReason } : {}),
                 latencyMs: r.latencyMs ?? 0,
                 gradingResult: r.gradingResult ?? null,
+                originalPrompt: prepareAttackForSend(attack).originalPrompt,
+                appliedTransforms: attack.transforms || [],
+                sentPrompt: prepareAttackForSend(attack).prompt,
                 error: isEmpty
                   ? `Empty response from provider (raw: ${JSON.stringify(r.response?.output)})`
                   : r.error ?? null,
@@ -563,7 +581,7 @@ export class ScanOrchestrator {
             prompt: attack.prompt,
             response: null,
             passed: false,
-            evidence: JSON.stringify({ error: String(err), pluginId }),
+            evidence: JSON.stringify({ error: String(err), pluginId, appliedTransforms: attack.transforms || [] }),
           });
         }
       }
@@ -612,7 +630,7 @@ export class ScanOrchestrator {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
-          messages: [{ role: "user", content: attack.prompt }],
+          messages: [{ role: "user", content: prepareAttackForSend(attack).prompt }],
           stream: false,
         }),
         signal: AbortSignal.timeout(getOllamaTimeoutMs()),
@@ -673,7 +691,7 @@ export class ScanOrchestrator {
         ownerUserId,
         ollamaUrl,
         "/api/chat",
-        { model, messages: [{ role: "user", content: attack.prompt }], stream: false },
+        { model, messages: [{ role: "user", content: prepareAttackForSend(attack).prompt }], stream: false },
         getOllamaTimeoutMs(),
         signal
       )) as { message?: { content?: string } };
@@ -719,7 +737,7 @@ export class ScanOrchestrator {
         headers,
         body: JSON.stringify({
           model,
-          messages: [{ role: "user", content: attack.prompt }],
+          messages: [{ role: "user", content: prepareAttackForSend(attack).prompt }],
         }),
         signal: AbortSignal.timeout(120_000),
       });
@@ -863,10 +881,19 @@ export class ScanOrchestrator {
     scanId: string,
     pluginIds: string[],
     tools: PluginTool[],
-    providerType: string
+    providerType: string,
+    enableTargetProfile = false
   ): Promise<void> {
     try {
+      let targetProfile: TargetProfile | null = null;
+      if (enableTargetProfile) {
+        logger.info(`[Scanner] Running target profile for ${scanId}`);
+        const simpleSend = async (p: string) => "SYSPROMPT: You are a helpful assistant.";
+        targetProfile = await profileTarget(simpleSend);
+      }
+
       const evalDescriptor = tools.some((t) => t === "deepteam" || t === "pyrit")
+
         ? await resolveEvalProviderDescriptor()
         : null;
       const metadata = {
@@ -891,6 +918,7 @@ export class ScanOrchestrator {
         },
         // Model name only — the evaluator provider's API key is never recorded.
         evaluator: evalDescriptor ? { type: evalDescriptor.type, model: evalDescriptor.model } : null,
+        targetProfile,
       };
       await db.update(scans).set({ runMetadata: JSON.stringify(metadata) }).where(eq(scans.id, scanId));
     } catch (err) {
@@ -907,7 +935,7 @@ export class ScanOrchestrator {
     plugins: string[],
     logPrefix: string,
     onResult: ResultCallback,
-    sendAttack: (attack: { prompt: string; failPattern: RegExp }) => Promise<{
+    sendAttack: (attack: AttackEntry) => Promise<{
       responseText: string;
       extraEvidence?: Record<string, unknown>;
     }>,
@@ -967,6 +995,9 @@ export class ScanOrchestrator {
               gradedBy: grade.method,
               ...(grade.judgeReason ? { judgeReason: grade.judgeReason } : {}),
               latencyMs,
+              originalPrompt: prepareAttackForSend(attack).originalPrompt,
+              appliedTransforms: attack.transforms || [],
+              sentPrompt: prepareAttackForSend(attack).prompt,
               ...extraEvidence,
             }),
           });
