@@ -12,6 +12,7 @@ import { assertUrlNotBlocked } from "../utils/urlValidation.js";
 import { PLUGIN_ATTACKS, type AttackEntry } from "../config/attackPatterns.js";
 import { applyTransformsChain } from "../config/transforms.js";
 import { profileTarget, type TargetProfile } from "./targetProfiler.js";
+import { attackTransformer } from "./attackTransformer.js";
 import { gradeResponse, type Grade } from "./attackJudge.js";
 import { resolveEvalProviderDescriptor } from "./aiProvider.js";
 import { throttleTargetCall } from "./targetThrottle.js";
@@ -187,6 +188,15 @@ export class ScanOrchestrator {
       const scanTransforms = options.transforms || [];
       const enableProfile = options.enableTargetProfile || false;
       const profileMode = options.targetProfileMode || "basic";
+
+      // Pliny playbook integration (from delegation/T3MP3ST) - minimal hook
+      // Real application in per-attack loop or via preset in future atomic
+      if ((options as any).usePliny || false) {
+        const tech = attackTransformer.listTechniques()[0]?.id;
+        if (tech) {
+          // placeholder
+        }
+      }
 
       // Override prepare to use scan level transforms if provided
       const originalPrepare = prepareAttackForSend;
