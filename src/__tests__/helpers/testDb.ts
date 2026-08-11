@@ -87,6 +87,10 @@ const CREATE_SCHEMA_SQL = `
     response TEXT,
     passed INTEGER NOT NULL,
     evidence TEXT NOT NULL DEFAULT '{}',
+    triage_status TEXT DEFAULT 'pending',
+    triage_notes TEXT,
+    triaged_at INTEGER,
+    triaged_by TEXT,
     created_at INTEGER NOT NULL
   );
 

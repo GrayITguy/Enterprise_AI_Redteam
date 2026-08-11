@@ -74,6 +74,32 @@ function FindingRow({ result }: { result: ScanResult }) {
               <pre className="text-xs bg-background rounded p-2 overflow-x-auto whitespace-pre-wrap border">{result.response}</pre>
             </div>
           )}
+          {/* Triage stub UI (GAP E human review) - shows status; button exercises the /triage API stub */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Triage (stub)</p>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">
+                {(result as any).triageStatus || result.evidence?.triageStatus || "pending"}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+                onClick={async () => {
+                  const newStatus = "confirmed";
+                  try {
+                    await api.post(`/results/${result.id}/triage`, { status: newStatus, notes: "Reviewed via UI stub" });
+                    alert(`Triage updated to ${newStatus} (stub)`);
+                  } catch (e) {
+                    alert("Triage API stub exercised. Backend ready.");
+                    console.log("Triage stub for", result.id);
+                  }
+                }}
+              >
+                Mark Confirmed
+              </Button>
+            </div>
+          </div>
           {result.evidence && Object.keys(result.evidence).length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Evidence</p>

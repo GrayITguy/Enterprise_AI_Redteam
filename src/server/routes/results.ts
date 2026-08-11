@@ -184,3 +184,36 @@ Write the summary covering: overall risk posture, most significant vulnerabiliti
     return res.status(502).json({ error: msg });
   }
 }));
+
+// ─── POST /api/results/:resultId/triage (stub for GAP E human-triage queue) ──
+resultsRouter.post("/:resultId/triage", asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { status, notes } = req.body || {};
+  const valid = ["pending", "confirmed", "false_positive", "needs_review"];
+  if (!valid.includes(status)) {
+    return res.status(400).json({ error: "Invalid triage status" });
+  }
+  const result = await getRow(db
+    .select({ id: scanResults.id, scanId: scanResults.scanId })
+    .from(scanResults)
+    .where(eq(scanResults.id, req.params.resultId))
+  );
+  if (!result) return res.status(404).json({ error: "Result not found" });
+  const scan = await getRow(db
+    .select({ userId: scans.userId })
+    .from(scans)
+    .where(eq(scans.id, result.scanId))
+  );
+  if (!scan || scan.userId !== req.user!.id) {
+    return res.status(403).json({ error: "Not authorized" });
+  }
+  await db
+    .update(scanResults)
+    .set({
+      triageStatus: status,
+      triageNotes: notes || null,
+      triagedAt: new Date(),
+      triagedBy: req.user!.id,
+    })
+    .where(eq(scanResults.id, req.params.resultId));
+  return res.json({ ok: true, resultId: req.params.resultId, triageStatus: status });
+}));

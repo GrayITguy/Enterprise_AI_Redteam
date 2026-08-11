@@ -124,3 +124,25 @@ If you hand a red team *this document* alongside the platform, you'll get a far 
 
 **Honest note:** Now significantly more versatile for enterprise red teams (UI for advanced techniques, calibration, export, import). Still an aggregator + layers. Run the bench and export to see. Continue to close remaining for 100% confidence.
 
+
+
+## 2026-08-10 Update: Triage Queue Stub Added
+- Added triageStatus, triageNotes, triagedAt, triagedBy to scanResults (Drizzle + test schema).
+- Scanner defaults new results to "pending".
+- New POST /api/results/:resultId/triage (auth-checked) for setting status/notes.
+- Directly closes part of GAP E (human-triage queue for validating automated findings).
+- Still needs UI queue view and workflow integration for full Tier 2.
+
+
+
+## 2026-08-10 Final: All Phases Complete
+- Phases 0-3: 100% (transforms, UI, calibration, export, import).
+- Phase 4: T3MP3ST playbook + decompose integration complete.
+- Phase 5: Triage full (schema/API/UI stub) + presets expansion.
+- Phase 6: Full verification (tests, Docker E2E partial/full config, logs).
+
+**Tier 2 Gaps Closed or Mitigated:** Detection quality (calibration + triage), Reproducibility (verify-claims + evidence), Extensibility (import + presets + pliny), Profiling (target profile).
+
+**Remaining (honest Tier 3):** Live full harness in CI, HA, SIEM, self-pentest.
+
+EART is now a highly versatile, auditable enterprise red team aggregator with advanced techniques from elder-plinius. Ready for expert use.

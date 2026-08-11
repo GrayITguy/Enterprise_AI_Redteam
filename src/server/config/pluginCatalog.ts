@@ -857,6 +857,26 @@ export const PRESETS: Record<string, Preset> = {
     description: "Every plugin across all 4 tools. Comprehensive red team assessment.",
     plugins: PLUGINS.map((p) => p.id),
   },
+  "pliny-advanced": {
+    name: "Pliny Advanced (T3MP3ST)",
+    description: "P4RS3LT0NGV3-style playbook + transforms for advanced filter evasion and jailbreaks.",
+    plugins: ["promptfoo:jailbreak", "promptfoo:system-prompt-leak", "promptfoo:prompt-injection"],
+  },
+  "pliny-decompose": {
+    name: "Pliny Decompose + Swarm (T3MP3ST)",
+    description: "Decompose goal into sub-attacks + synthesize using advanced techniques.",
+    plugins: ["promptfoo:prompt-injection", "promptfoo:indirect-prompt-injection"],
+  },
+  "transformed-owasp": {
+    name: "OWASP + Transforms (base64/rot13 + pliny)",
+    description: "OWASP plugins with P4RS3LT0NGV3 transforms and pliny playbook for evasion testing.",
+    plugins: ["promptfoo:prompt-injection", "promptfoo:jailbreak", "promptfoo:system-prompt-leak"],
+  },
+  "profiled-full": {
+    name: "Full + Target Profile + Advanced",
+    description: "Full scan with target profile extraction and pliny-advanced techniques enabled.",
+    plugins: PLUGINS.map((p) => p.id),
+  },
 };
 
 export function getPluginById(id: string): Plugin | undefined {

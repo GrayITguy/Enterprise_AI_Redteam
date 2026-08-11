@@ -125,6 +125,11 @@ export const scanResults = pgTable("scan_results", {
   passed: boolean("passed").notNull(),
   /** JSON object with tool-specific evidence */
   evidence: text("evidence").notNull().default("{}"),
+  /** Triage for human review (GAP E) — pending | confirmed | false_positive | needs_review */
+  triageStatus: text("triage_status").default("pending"),
+  triageNotes: text("triage_notes"),
+  triagedAt: timestamp("triaged_at", { withTimezone: true, mode: "date" }),
+  triagedBy: text("triaged_by"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 });
 

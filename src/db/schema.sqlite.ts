@@ -133,6 +133,11 @@ export const scanResults = sqliteTable("scan_results", {
   passed: integer("passed", { mode: "boolean" }).notNull(),
   /** JSON object with tool-specific evidence */
   evidence: text("evidence").notNull().default("{}"),
+  /** Triage for human review (GAP E) — pending | confirmed | false_positive | needs_review */
+  triageStatus: text("triage_status").default("pending"),
+  triageNotes: text("triage_notes"),
+  triagedAt: integer("triaged_at", { mode: "timestamp" }),
+  triagedBy: text("triaged_by"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 

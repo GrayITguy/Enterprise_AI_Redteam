@@ -359,6 +359,8 @@ scansRouter.get("/:id/verify-claims", asyncHandler(async (req: AuthenticatedRequ
       passed: scanResults.passed,
       evidence: scanResults.evidence,
       severity: scanResults.severity,
+      triageStatus: scanResults.triageStatus,
+      triageNotes: scanResults.triageNotes,
     })
     .from(scanResults)
     .where(eq(scanResults.scanId, scanId))

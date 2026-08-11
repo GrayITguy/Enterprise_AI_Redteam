@@ -112,3 +112,19 @@ export function applyTechnique(
 export function listPlaybookTechniques() {
   return AI_REDTEAM_PLAYBOOK;
 }
+
+
+// T3MP3ST-style decompose (delegation idea #2) - stub for multi-agent
+export function decomposeGoal(goal: string): string[] {
+  // Simple heuristic decompose; in full would use LLM
+  const subs = [
+    `Break down: ${goal} into 3 benign sub-queries`,
+    `Rephrase ${goal} without direct trigger words`,
+    `Synthesize safe answer for ${goal}`
+  ];
+  return subs;
+}
+
+export function synthesizeFromSubs(subs: string[], original: string): string {
+  return `[DECOMPOSED + SYNTHESIZED for: ${original}]\n${subs.join("\n")}`;
+}

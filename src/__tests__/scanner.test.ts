@@ -246,7 +246,7 @@ describe("ScanOrchestrator", () => {
 
     const progressValues: number[] = [];
     const orchestrator = new ScanOrchestrator();
-    await orchestrator.run(scanId, (p) => {
+    await orchestrator.run(scanId, {}, (p) => {
       progressValues.push(p);
       return Promise.resolve();
     });
