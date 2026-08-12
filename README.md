@@ -77,6 +77,26 @@ docker exec eart-ollama ollama pull llama3
 
 Then create a project with `Provider: Ollama` and target URL `http://ollama:11434`.
 
+
+### Automatic Local Model Detection (LM Studio, Ollama, llama.cpp, etc.)
+
+EART can discover models running on your host (outside Docker):
+
+- In the project form, click **"Detect Local"** (appears for Ollama and Custom providers).
+- It calls the backend which reaches your host via `host.docker.internal`.
+- Supports:
+  - LM Studio on port **1234** (`/v1/models`)
+  - Ollama on port **11434** (`/api/tags`)
+  - Other OpenAI-compatible servers (llama.cpp, etc.)
+- The first discovered model is auto-selected and the target URL is filled.
+
+For cloud providers (OpenAI, Anthropic) use the **"Detect"** button instead — it lists real models available to your API key.
+
+Target URLs for OpenAI-compatible providers are automatically normalized on save (trailing `/v1/chat/completions`, `/v1` etc. are stripped) to prevent 404 errors in the real engines.
+
+Promptfoo (used for real OpenAI/Anthropic scans) now works reliably inside the container thanks to proper non-root HOME directory setup.
+
+
 ---
 
 ## Features
@@ -87,12 +107,35 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 - **Results & AI Summary** — per-finding detail with prompt/response/evidence, OWASP radar chart, AI-generated executive summary
 - **Remediation Engine** — AI-generated remediation plans, risk scoring (0-100), root-cause analysis, copy-pasteable hardening configs, one-click verification re-scans — works fully offline via Ollama
 - **Settings** — configure AI provider (Ollama, OpenAI, Anthropic, or custom endpoint with model auto-detection) and SMTP from the web UI
-- **Endpoint Auto-Bridge** — zero-config local model scanning; `localhost` endpoints automatically bridged into Docker workers
+- **Endpoint Auto-Bridge + Local Discovery** — zero-config local model scanning; `localhost` endpoints automatically bridged. New **Detect Local** button for LM Studio / Ollama / custom OpenAI-compatible servers (and **Detect** for cloud keys). Automatic URL normalization prevents 404s.
 - **Reports** — PDF and JSON export per scan
 - **Team Access** — JWT auth with admin / analyst / viewer base tiers, invite-code registration, and **custom roles** that grant fine-grained permissions (e.g. `scan:create`, `audit:read`) on top of a base tier — managed from Settings
 - **Enterprise IAM (optional)** — OIDC and SAML 2.0 single sign-on, SCIM 2.0 user provisioning/deprovisioning, and IdP group → role mapping; all feature-flagged off until configured (see [`.env.example`](.env.example))
 - **Governance & compliance** — append-only audit log, pre-run scan cost estimate + hard call ceiling, target-authorization allow-list, per-target rate limiting, time-based data-retention purge + response minimization, and MITRE ATLAS / NIST AI RMF framework mappings on findings
 
+## Advanced Enterprise Red Teaming Features (2026-08)
+
+These capabilities were added to make EART the most effective and versatile tool for enterprise AI red teams:
+
+- **Composable Transforms (P4RS3LT0NGV3-style)**: 10 pure text transforms (base64, rot13, leetspeak, zero-width steganography, homoglyph, Caesar, URL encode, whitespace stego, full-width, identity). Apply as layers on attacks for filter evasion testing. Original prompt always preserved in evidence for audit and grading.
+- **Target Profile Extraction**: Automatically probe targets for system prompts (basic or advanced modes) to craft more effective attacks.
+- **T3MP3ST / Elder-Plinius Playbook Integration**:
+  - AI Red Team Playbook with 6 core techniques (refusal suppression, prefill affirmation, format scaffold hijack, divider mode switch, encoding obfuscation, stacked composition).
+  - Decompose + Synthesize for breaking down goals into benign sub-attacks.
+- **New Presets**: pliny-advanced, pliny-decompose, transformed-owasp, profiled-full.
+- **Human Triage Queue**: Mark findings as pending / confirmed / false_positive / needs_review directly from the Results UI. Full backend support with notes and timestamps.
+- **Verify Claims Reproducibility Export**: GET /api/scans/:id/verify-claims returns the complete chain — original vs sent prompts, applied transforms, target profile, run metadata, judge details, and triage status. Perfect for audit and reproduction.
+- **External Library Import**: Load additional attacks from JSONL/CSV (seed with CL4R1T4S subsets) via UI or API.
+
+All features integrate with existing enterprise controls (auth, audit log, cost ceilings, allowlists) and are fully self-hosted / air-gapped friendly.
+
+**Note on Screenshots**: The images above reflect earlier versions of the UI. New elements include:
+- Transforms multi-select and preview in Scan Builder.
+- Target Profile toggle/step.
+- Triage status badge and action buttons in Results.
+- Pliny presets in the catalog.
+
+Updated screenshots will be added in a follow-up.
 ---
 
 ## Scan Presets
@@ -102,6 +145,10 @@ Then create a project with `Provider: Ollama` and target URL `http://ollama:1143
 | Quick | 10 | Core vulnerabilities — prompt injection, jailbreaks, PII, toxicity |
 | OWASP | 22 | All 10 OWASP LLM Top 10 categories |
 | Full | 82 | Every plugin across Promptfoo, Garak, PyRIT, and DeepTeam |
+| pliny-advanced | Core + transforms | P4RS3LT0NGV3 + T3MP3ST playbook techniques |
+| pliny-decompose | Injection focused | Decompose + synthesize for advanced evasion |
+| transformed-owasp | OWASP + layers | OWASP with base64/rot13/pliny transforms |
+| profiled-full | Full + profile | Full scan with target profile extraction |
 
 ---
 

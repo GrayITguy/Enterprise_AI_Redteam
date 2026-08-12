@@ -19,6 +19,8 @@ export const ALLOWED_TARGET_HOSTS: Set<string> = new Set([
   "localhost",
   "127.0.0.1",
   "host.docker.internal",
+  "api.openai.com",
+  "api.anthropic.com",
 ]);
 
 // Merge in any admin-configured hosts from the environment.

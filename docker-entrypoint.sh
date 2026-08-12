@@ -1,8 +1,8 @@
 #!/bin/sh
-# Entrypoint: fix ownership of the mounted data/log volumes (named volumes are
-# created root-owned on first mount) and then drop to the non-root `eart` user.
+# Entrypoint: ensure writable dirs for non-root user (home for promptfoo etc, data volume)
 set -e
 
-chown -R eart:eart /data /app/logs 2>/dev/null || true
+mkdir -p /home/eart/.promptfoo /data/.promptfoo /data/reports /app/logs 2>/dev/null || true
+chown -R eart:eart /home/eart /data /app/logs 2>/dev/null || true
 
 exec su-exec eart "$@"

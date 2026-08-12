@@ -17,6 +17,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --no-modify-path --profile minimal
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Opt out of deepeval/deepteam telemetry & update checks so the worker never
 # phones home from inside a customer's network. The runner also sets these
@@ -25,10 +26,12 @@ ENV DEEPEVAL_TELEMETRY_OPT_OUT=YES \
     DEEPEVAL_UPDATE_WARNING_OPT_OUT=YES \
     ERROR_REPORTING=NO
 
-COPY requirements.txt .
+COPY deepteam/requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY runner.py .
+COPY common common
+COPY deepteam/runner.py .
+COPY common common
 
 ENTRYPOINT ["python", "-u", "runner.py"]

@@ -45,7 +45,7 @@ FROM node:24-alpine AS runtime
 RUN apk add --no-cache docker-cli wget su-exec
 
 # Non-root runtime user.
-RUN addgroup -S eart && adduser -S -G eart -H eart
+RUN addgroup -S eart && adduser -S -G eart eart
 
 WORKDIR /app
 
@@ -66,9 +66,15 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create runtime directories owned by the runtime user
-RUN mkdir -p /data/reports /app/logs && chown -R eart:eart /data /app/logs
+RUN mkdir -p /home/eart/.promptfoo /data/reports /data/.promptfoo /app/logs && chown -R eart:eart /home/eart /data /app/logs
 
 EXPOSE 3000
+
+# Promptfoo (used for cloud providers like OpenAI) stores config/cache here.
+# /data is owned by eart and usually volume-mounted.
+ENV HOME=/home/eart
+ENV PROMPTFOO_CONFIG_DIR=/data/.promptfoo
+
 
 # The entrypoint drops to the non-root `eart` user before running the CMD.
 ENTRYPOINT ["docker-entrypoint.sh"]

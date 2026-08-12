@@ -270,11 +270,11 @@ settingsRouter.post(
 /**
  * POST /api/settings/models — list available models for a given provider.
  * Works for Ollama (/api/tags) and OpenAI-compatible (/v1/models) endpoints.
- * Admin only (since it uses potentially-saved API keys).
+ * Authenticated users may provide their own key; falls back to saved admin key only for admins.
  */
 settingsRouter.post(
   "/models",
-  requireRole("admin"),
+  requireAuth,
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
       providerType: z.enum(["ollama", "openai", "anthropic", "custom"]),

@@ -8,6 +8,27 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 
 ## [Unreleased]
 
+
+### Added (2026-08-12 local models + robustness)
+- **Automatic Local Model Discovery** — New `GET /api/connectivity/local` endpoint (auth required) that probes common local servers inside Docker using `host.docker.internal`:
+  - LM Studio: `http://host.docker.internal:1234/v1/models`
+  - Ollama: `http://host.docker.internal:11434/api/tags`
+  - Other OpenAI-compatible (llama.cpp, etc.) on common ports.
+- **"Detect Local" button** in Create/Edit Project (shown only for `ollama` and `custom` providers). Auto-fills Target URL + first discovered model and switches provider if needed.
+- **"Detect" button** for cloud providers (`openai`, `anthropic`): calls `/api/settings/models` with your API key to list real available models (no more guessing `gpt-5...` names).
+- Shared Python normalization helper (`python-workers/common/normalize.py`) used by all workers.
+
+### Fixed (2026-08-12)
+- **Promptfoo permission error** (`EACCES: permission denied, mkdir '/home/eart/.promptfoo'`) — Dockerfile creates proper `/home/eart/.promptfoo`, entrypoint runs `mkdir -p` + `chown -R eart:eart` on every start, `PROMPTFOO_CONFIG_DIR=/data/.promptfoo` + `HOME=/home/eart` set.
+- **PyRIT / Garak / DeepTeam 404 on OpenAI targets** — robust `_normalize_chat_url` (tolerates bare host, `/v1`, full `/v1/chat/completions`) now shared; plus `normalizeTargetUrl()` called on project create/patch for openai/custom/anthropic so bad paths are never stored.
+- Duplicated endpoint munging logic removed (now single source in common + backend).
+- apiKey redaction artifacts in `site/src/pages/Projects.tsx` that broke form submission and model detection.
+- Worker Docker build contexts adjusted to share `common/` module without duplication.
+
+### Changed
+- Endpoint handling for OpenAI-compatible targets is now normalized at persistence time (deeper fix) rather than only at call time.
+- "Custom / Local OpenAI Compatible" label clarified in UI.
+
 ### Security
 - **CI now gates on high/critical dependency advisories.** A new `Dependency Audit` job runs `npm audit --omit=dev --audit-level=high` for both the backend and frontend production dependency trees, so a shipped vulnerability (like the React Router advisory below) fails the PR instead of only surfacing as an after-the-fact Dependabot alert. Dev-only advisories (build tooling that never reaches users) are reported as warnings but do **not** gate — they churn frequently and blocking on them would redden `main` for issues that don't ship; drop `--omit=dev` in `.github/workflows/ci.yml` to widen the gate. The same check runs locally via `npm run audit:ci`. *(This gate reflects npm-registry advisory data; it is not a substitute for the deeper supply-chain review a security product ultimately warrants — no SBOM, provenance/signature verification, or pinned-hash enforcement yet.)*
 - **Upgraded React Router to 8.3.0 to clear the RSC-mode CSRF advisory (GHSA-qwww-vcr4-c8h2).** The frontend was on `react-router-dom@7.18.2`, flagged high-severity by the advisory affecting `react-router` `>=7.12.0 <8.3.0`. The vulnerability **only affects apps using the unstable RSC (React Server Components) APIs** — EART uses standard `BrowserRouter` SPA routing, so it was not exploitable here — but the dependency was bumped to the patched **8.3.0** to clear the Dependabot alert. React Router v8 consolidated its packages (the `react-router-dom` package is discontinued; the last release is 7.18.2), so this drops `react-router-dom` in favour of `react-router` and updates every import from `"react-router-dom"` to `"react-router"`. All APIs used (`BrowserRouter`, `Routes`, `Route`, `Navigate`, `Outlet`, `Link`, `useNavigate`, `useParams`, `useLocation`, `useSearchParams`, `MemoryRouter`) are unchanged in v8; type-check, tests, and build all pass. `npm audit` on the frontend is now clean (0 vulnerabilities).
@@ -139,3 +160,32 @@ Format: [Semantic Versioning](https://semver.org/) — `Added`, `Changed`, `Fixe
 - Docker Compose deployment with multi-stage Dockerfile
 - SQLite (default) or PostgreSQL via Drizzle ORM
 - Ollama integration for air-gapped / local model scanning
+
+## [Unreleased] - 2026-08-10
+
+### Added
+- **Composable Transforms** (10 P4RS3LT0NGV3-inspired layers: base64, rot13, leetspeak, zero-width, homoglyph, caesar, urlEncode, whitespaceStego, fullWidth, etc.) with evidence tracking for original vs sent prompts.
+- **Target Profile** step: basic + advanced system prompt extraction for better red teaming.
+- **Verify Claims** reproducibility export: `GET /api/scans/:id/verify-claims` returns full chain (originalPrompt, appliedTransforms, targetProfile, runMetadata, evidence).
+- **External Attack Import**: JSONL/CSV loader + UI button for CL4R1T4S and other libraries.
+- **T3MP3ST / Elder-Plinius Integration**:
+  - AI Red Team Playbook (refusal suppression, prefill, format scaffold, divider, encoding, stacked composition).
+  - Decompose + Synthesize for multi-step attacks.
+  - New presets: `pliny-advanced`, `pliny-decompose`, `transformed-owasp`, `profiled-full`.
+- **Human Triage Queue**:
+  - Schema fields (triageStatus, triageNotes, triagedAt, triagedBy).
+  - API: `POST /api/results/:resultId/triage`.
+  - UI: Status badge + "Mark Confirmed" action in Results page.
+- Updated presets and ScanBuilder to support transforms + profile + pliny options.
+- All changes verified with full test suite (221/221), TSC clean, and Docker E2E spins.
+
+### Changed
+- Enhanced scanner to preserve original prompts while sending transformed versions.
+- Extended verify-claims to include triage data.
+- Master completion plan added (`docs/plans/003-all-phases-completion.md`).
+
+### Documentation
+- Updated Execution-Log.md, Kanban.md, ENTERPRISE_GAP_ASSESSMENT.md, Obsidian Active.md.
+- New completion plan for all phases (0-6).
+- All phases now marked complete for Tier 2 trustworthy findings.
+

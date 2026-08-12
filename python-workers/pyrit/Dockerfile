@@ -17,16 +17,19 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --no-modify-path --profile minimal
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Keep PyRIT / HuggingFace telemetry off so the worker never phones home from
 # inside a customer's network (the runner also sets these defensively).
 ENV PYRIT_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_TELEMETRY=1
 
-COPY requirements.txt .
+COPY pyrit/requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY runner.py .
+COPY common common
+COPY pyrit/runner.py .
+COPY common common
 
 ENTRYPOINT ["python", "-u", "runner.py"]

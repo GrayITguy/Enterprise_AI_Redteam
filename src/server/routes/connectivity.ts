@@ -161,3 +161,59 @@ async function checkEndpoint(
     return { reachable: false, latencyMs, dockerResolved, error: message, suggestion };
   }
 }
+
+/**
+ * Local LLM auto-discovery for popular desktop apps.
+ * Probes common ports using host.docker.internal when in Docker.
+ */
+async function discoverLocalModels(): Promise<Array<{ url: string; type: string; models: string[]; name?: string; reachable: boolean }>> {
+  const candidates = [
+    { port: 11434, path: "/api/tags", type: "ollama", name: "Ollama" },
+    { port: 1234, path: "/v1/models", type: "openai-compatible", name: "LM Studio" },
+    { port: 8080, path: "/v1/models", type: "openai-compatible", name: "llama.cpp / server" },
+    { port: 8000, path: "/v1/models", type: "openai-compatible", name: "Local OpenAI compat (8000)" },
+  ];
+
+  const results: any[] = [];
+  const inDocker = isRunningInDocker();
+  const host = inDocker ? "host.docker.internal" : "localhost";
+
+  for (const cand of candidates) {
+    const base = `http://${host}:${cand.port}`;
+    try {
+      const target = new URL(cand.path, base);
+      const resp = await fetch(target, { signal: AbortSignal.timeout(2500) });
+      if (resp.ok) {
+        let models: string[] = [];
+        try {
+          const data = await resp.json();
+          if (cand.type === "ollama") {
+            models = (data.models || []).map((m: any) => m.name);
+          } else {
+            models = (data.data || []).map((m: any) => m.id || m.name).filter(Boolean);
+          }
+        } catch {}
+        results.push({
+          url: base,
+          type: cand.type,
+          models,
+          name: cand.name,
+          reachable: true,
+        });
+      }
+    } catch {
+      // not running or unreachable — skip silently for discovery
+    }
+  }
+  return results;
+}
+
+/**
+ * GET /api/connectivity/local
+ * Auto-detects popular local LLM servers (LM Studio, Ollama, etc.)
+ * Returns list of reachable ones with models.
+ */
+connectivityRouter.get("/local", asyncHandler(async (_req: Request, res: Response) => {
+  const discovered = await discoverLocalModels();
+  res.json({ discovered, inDocker: isRunningInDocker() });
+}));

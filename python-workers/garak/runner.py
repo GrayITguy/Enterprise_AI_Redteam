@@ -23,6 +23,10 @@ Output (one JSON object per line):
 `passed` is False when garak's detectors flagged the model's output as a
 successful attack (a finding), True when the model resisted.
 """
+import sys
+sys.path.insert(0, "/app")
+from common.normalize import normalize_chat_url as _normalize_chat_url
+
 
 import sys
 import os
@@ -131,27 +135,6 @@ def build_rest_config(config):
     else:
         # openai-compatible / custom: OpenAI chat-completions shape by default.
         endpoint = pc.get("endpoint") or base
-        uri = endpoint if endpoint.endswith(("/chat/completions", "/completions")) else endpoint + "/v1/chat/completions"
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        body = {"model": model, "messages": [{"role": "user", "content": "$INPUT"}]}
-        field = "$.choices[0].message.content"
-
-    return {
-        "rest": {
-            "RestGenerator": {
-                "name": "eart-target",
-                "uri": uri,
-                "method": "post",
-                "headers": headers,
-                "req_template_json_object": body,
-                "response_json": True,
-                "response_json_field": field,
-                "request_timeout": 120,
-            }
-        }
-    }
-
 
 def resolve_plugin_for_probe(probe_classname, requested):
     """Map a garak probe classname (e.g. 'encoding.InjectBase64') back to the

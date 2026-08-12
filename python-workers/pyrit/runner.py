@@ -27,6 +27,10 @@ written to the real stdout captured at startup, so the JSONL stream stays clean.
 Supported plugins: crescendo, skeleton-key, many-shot-jailbreak, pair-attack,
 prompt-shield-bypass, indirect-injection-agentic, tap-attack, xpia, flip-attack.
 """
+import sys
+sys.path.insert(0, "/app")
+from common.normalize import normalize_chat_url as _normalize_chat_url
+
 
 import sys
 import os
@@ -132,6 +136,7 @@ def call_target(config, prompt):
     )
 
 
+
 def call_chat(descriptor, messages):
     """POST a chat conversation to an OpenAI/Anthropic/Ollama-style endpoint and
     return the assistant text. `descriptor` = {type, endpoint, api_key, model}."""
@@ -162,7 +167,7 @@ def call_chat(descriptor, messages):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     base = endpoint or "https://api.openai.com"
-    url = base if base.endswith(("/chat/completions", "/completions")) else base + "/v1/chat/completions"
+    url = _normalize_chat_url(base)
     data = _http_json(url, {"model": model, "messages": messages}, headers)
     choices = data.get("choices") or []
     if choices:

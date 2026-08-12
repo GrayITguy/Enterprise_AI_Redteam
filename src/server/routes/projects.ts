@@ -40,6 +40,20 @@ export const projectsRouter = Router();
 projectsRouter.use(apiLimiter);
 projectsRouter.use(requireAuth);
 
+
+function normalizeTargetUrl(url: string, providerType: string): string {
+  if (!url) return url;
+  let u = url.trim().replace(/\/+$/, "");
+  // For OpenAI-compatible (openai, custom) and anthropic, strip common suffixes so workers get a clean base
+  if (["openai", "custom", "anthropic"].includes(providerType)) {
+    u = u.replace(/\/v1\/chat\/completions$/, "");
+    u = u.replace(/\/v1$/, "");
+    u = u.replace(/\/chat\/completions$/, "");
+    u = u.replace(/\/completions$/, "");
+  }
+  return u;
+}
+
 const CreateProjectSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -88,7 +102,7 @@ projectsRouter.post("/", asyncHandler(async (req: AuthenticatedRequest, res) => 
     userId: req.user!.id,
     name: parsed.data.name,
     description: parsed.data.description ?? null,
-    targetUrl: parsed.data.targetUrl,
+    targetUrl: normalizeTargetUrl(parsed.data.targetUrl, parsed.data.providerType),
     providerType: parsed.data.providerType,
     providerConfig: JSON.stringify(parsed.data.providerConfig),
     isArchived: false,
@@ -174,7 +188,7 @@ projectsRouter.patch("/:id", asyncHandler(async (req: AuthenticatedRequest, res)
 
   if (parsed.data.name !== undefined) updates.name = parsed.data.name;
   if (parsed.data.description !== undefined) updates.description = parsed.data.description ?? null;
-  if (parsed.data.targetUrl !== undefined) updates.targetUrl = parsed.data.targetUrl;
+  if (parsed.data.targetUrl !== undefined) updates.targetUrl = normalizeTargetUrl(parsed.data.targetUrl, parsed.data.providerType ?? project.providerType);
   if (parsed.data.providerType !== undefined) updates.providerType = parsed.data.providerType;
   if (parsed.data.providerConfig !== undefined) {
     // Preserve a stored apiKey/secret when the client saves without re-sending

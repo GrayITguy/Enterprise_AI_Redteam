@@ -109,6 +109,10 @@ function applySchemaDirectly(): void {
       response TEXT,
       passed INTEGER NOT NULL,
       evidence TEXT NOT NULL DEFAULT '{}',
+      triage_status TEXT DEFAULT 'pending',
+      triage_notes TEXT,
+      triaged_at INTEGER,
+      triaged_by TEXT,
       created_at INTEGER NOT NULL
     );
 
@@ -169,6 +173,10 @@ function applySchemaDirectly(): void {
     "ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE users ADD COLUMN external_id TEXT",
     "ALTER TABLE users ADD COLUMN custom_role_id TEXT",
+    "ALTER TABLE scan_results ADD COLUMN triage_status TEXT DEFAULT 'pending'",
+    "ALTER TABLE scan_results ADD COLUMN triage_notes TEXT",
+    "ALTER TABLE scan_results ADD COLUMN triaged_at INTEGER",
+    "ALTER TABLE scan_results ADD COLUMN triaged_by TEXT",
   ];
   for (const stmt of alterStmts) {
     try { sqlite.exec(stmt); } catch { /* column already exists */ }
@@ -253,6 +261,10 @@ async function applyPostgresSchema(): Promise<void> {
       response TEXT,
       passed BOOLEAN NOT NULL,
       evidence TEXT NOT NULL DEFAULT '{}',
+      triage_status TEXT DEFAULT 'pending',
+      triage_notes TEXT,
+      triaged_at TIMESTAMPTZ,
+      triaged_by TEXT,
       created_at TIMESTAMPTZ NOT NULL
     );
 
@@ -308,6 +320,10 @@ async function applyPostgresSchema(): Promise<void> {
     ALTER TABLE scans ADD COLUMN IF NOT EXISTS run_metadata TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS external_id TEXT;
+    ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS triage_status TEXT DEFAULT 'pending';
+    ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS triage_notes TEXT;
+    ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ;
+    ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS triaged_by TEXT;
   `);
 
   console.log("[DB] PostgreSQL schema applied");

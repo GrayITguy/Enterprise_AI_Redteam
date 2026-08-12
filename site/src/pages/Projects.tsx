@@ -25,7 +25,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   ollama: "Ollama (Local)",
   openai: "OpenAI",
   anthropic: "Anthropic",
-  custom: "Custom / LiteLLM",
+  custom: "Custom / Local OpenAI Compatible (LM Studio, llama.cpp, etc.)",
 };
 
 function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
@@ -38,12 +38,16 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     model: "",
     apiKey: "",
   });
-  const [ollamaStatus, setOllamaStatus] = useState<{
+    const [ollamaStatus, setOllamaStatus] = useState<{
     checking: boolean;
     running: boolean | null;
     models: string[];
     error?: string;
+    suggestion?: string;
   }>({ checking: false, running: null, models: [] });
+
+  const [localDiscovery, setLocalDiscovery] = useState<{ loading: boolean; results: any[]; error?: string }>({ loading: false, results: [] });
+
 
   const [serverStatus, setServerStatus] = useState<{
     checking: boolean;
@@ -51,6 +55,31 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
     latencyMs?: number;
     suggestion?: string;
   }>({ checking: false, reachable: null });
+
+
+  async function detectCloudModels() {
+    const key = form.apiKey;
+    if (!key && form.providerType !== "anthropic") {
+      alert("Enter an API key first to list models.");
+      return;
+    }
+    try {
+      const res = await api.post("/settings/models", {
+        providerType: form.providerType,
+        endpoint: form.targetUrl || undefined,
+        apiKey: key || undefined,
+      });
+      const models = (res.data?.models || []).map((m: any) => m.id || m.name).filter(Boolean);
+      if (models.length) {
+        alert("Models from API key:\n" + models.join("\n"));
+        if (!form.model) setForm(f => ({...f, model: models[0]}));
+      } else {
+        alert("No models returned. Check key/endpoint.");
+      }
+    } catch (e: any) {
+      alert("Detect failed: " + (e?.response?.data?.error || e.message || e));
+    }
+  }
 
   async function checkOllama(url: string) {
     if (!url) return;
@@ -124,6 +153,7 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const isOllama = form.providerType === "ollama";
+  const isLocalProvider = ["ollama", "custom"].includes(form.providerType);
 
   return (
     <form
@@ -191,6 +221,39 @@ function CreateProjectForm({ onSuccess }: { onSuccess: () => void }) {
               ) : (
                 "Check"
               )}
+            </Button>
+          )}
+          {isLocalProvider && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={async () => {
+              try {
+                const res = await api.get("/connectivity/local");
+                if (res.data.discovered && res.data.discovered.length > 0) {
+                  const first = res.data.discovered[0];
+                  setForm(f => ({ ...f, providerType: first.type === "ollama" ? "ollama" : "custom", targetUrl: first.url, model: first.models?.[0] || "" }));
+                  alert("Detected: " + first.name + " at " + first.url + ". Models: " + (first.models || []).join(", "));
+                } else {
+                  alert("No local LLM servers detected. Make sure LM Studio or Ollama is running on your host.");
+                }
+              } catch(e) { alert("Detection failed (auth or network): " + e); }
+            }}
+          >
+            Detect Local
+          </Button>
+          )}
+          {!isLocalProvider && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={detectCloudModels}
+            >
+              Detect
             </Button>
           )}
         </div>

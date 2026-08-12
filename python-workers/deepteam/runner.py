@@ -27,6 +27,10 @@ bias-religion, hallucination, pii-leakage, pii-session-leak,
 misinformation-politics, misinformation-health, copyright-violations,
 excessive-agency, robustness-hijacking.
 """
+import sys
+sys.path.insert(0, "/app")
+from common.normalize import normalize_chat_url as _normalize_chat_url
+
 
 import sys
 import os
@@ -119,25 +123,6 @@ def call_target(config, prompt):
     if provider_type == "ollama":
         url = f"{target_url.rstrip('/')}/api/generate"
         payload = {"model": model, "prompt": prompt, "stream": False, "options": {"num_predict": 300}}
-    else:
-        base = target_url.rstrip("/")
-        url = base if base.endswith(("/chat/completions", "/completions")) else base + "/v1/chat/completions"
-        payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_completion_tokens": 300}
-
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST", headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
-
-    if provider_type == "ollama":
-        return data.get("response", "")
-    choices = data.get("choices") or []
-    if choices:
-        return (choices[0].get("message") or {}).get("content", "")
-    # Some custom endpoints return {message:{content}} or {response}
-    return (data.get("message") or {}).get("content") or data.get("response") or ""
-
-
-# ─── Real deepteam path ───────────────────────────────────────────────────────
 
 def _extract_json(text):
     """Best-effort JSON object extraction from an LLM reply."""
