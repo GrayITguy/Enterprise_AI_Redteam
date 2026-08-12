@@ -135,8 +135,8 @@ services:
   # ─────────────────────────────────────────
   garak-worker:
     build:
-      context: ./python-workers
-      dockerfile: garak/Dockerfile
+      context: ./python-workers/garak
+      dockerfile: Dockerfile
     image: eart-garak:latest
     container_name: eart-garak-build
     command: ["echo", "garak worker image built successfully"]
@@ -146,8 +146,8 @@ services:
   # ─────────────────────────────────────────
   pyrit-worker:
     build:
-      context: ./python-workers
-      dockerfile: pyrit/Dockerfile
+      context: ./python-workers/pyrit
+      dockerfile: Dockerfile
     image: eart-pyrit:latest
     container_name: eart-pyrit-build
     command: ["echo", "pyrit worker image built successfully"]
@@ -157,8 +157,8 @@ services:
   # ─────────────────────────────────────────
   deepteam-worker:
     build:
-      context: ./python-workers
-      dockerfile: deepteam/Dockerfile
+      context: ./python-workers/deepteam
+      dockerfile: Dockerfile
     image: eart-deepteam:latest
     container_name: eart-deepteam-build
     command: ["echo", "deepteam worker image built successfully"]

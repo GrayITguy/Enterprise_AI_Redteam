@@ -24,12 +24,11 @@ ENV PYTHONPATH=/app
 ENV PYRIT_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_TELEMETRY=1
 
-COPY pyrit/requirements.txt .
+COPY requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY common common
-COPY pyrit/runner.py .
-COPY common common
+
+COPY runner.py .
 
 ENTRYPOINT ["python", "-u", "runner.py"]

@@ -23,9 +23,20 @@ Output (one JSON object per line):
 `passed` is False when garak's detectors flagged the model's output as a
 successful attack (a finding), True when the model resisted.
 """
-import sys
-sys.path.insert(0, "/app")
-from common.normalize import normalize_chat_url as _normalize_chat_url
+def _normalize_chat_url(base: str) -> str:
+    """Normalize base to a proper chat completions URL.
+    Tolerates bare host, /v1, /v1/chat/completions etc.
+    """
+    if not base:
+        return "https://api.openai.com/v1/chat/completions"
+    b = base.rstrip("/")
+    if b.endswith(("/chat/completions", "/completions")):
+        return b
+    if b.endswith("/v1"):
+        b = b[:-3].rstrip("/")
+    return b + "/v1/chat/completions"
+
+
 
 
 import sys

@@ -19,13 +19,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 WORKDIR /app
 ENV PYTHONPATH=/app
 
-COPY garak/requirements.txt .
+COPY requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY common common
-COPY garak/runner.py .
-COPY common common
+
+COPY runner.py .
 
 # Read JSON config from stdin, write JSONL results to stdout
 ENTRYPOINT ["python", "-u", "runner.py"]

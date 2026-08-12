@@ -26,12 +26,11 @@ ENV DEEPEVAL_TELEMETRY_OPT_OUT=YES \
     DEEPEVAL_UPDATE_WARNING_OPT_OUT=YES \
     ERROR_REPORTING=NO
 
-COPY deepteam/requirements.txt .
+COPY requirements.txt .
 # Bust Docker layer cache: 2026-03-11
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY common common
-COPY deepteam/runner.py .
-COPY common common
+
+COPY runner.py .
 
 ENTRYPOINT ["python", "-u", "runner.py"]
